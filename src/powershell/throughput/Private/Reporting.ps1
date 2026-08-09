@@ -286,9 +286,8 @@ function Write-Iperf3RunIndex {
     reportMdPath    = $ReportMdPath
   }
   $lockPath = "$indexPath.lock"
-  $maxAttempts = 30
-  $delayMs = 100
-  for ($attempt = 0; $attempt -lt $maxAttempts; $attempt++) {
+  $lockWait = [System.Diagnostics.Stopwatch]::StartNew()
+  while ($true) {
     $lockStream = $null
     try {
       $lockStream = [System.IO.File]::Open(
@@ -341,13 +340,12 @@ function Write-Iperf3RunIndex {
       return $indexPath
     }
     catch [System.IO.IOException] {
-      if ($attempt -lt ($maxAttempts - 1)) {
-        Start-Sleep -Milliseconds $delayMs
-      }
-      else {
-        Write-Warning "Failed to write run index after $maxAttempts lock attempts: $($_.Exception.Message)"
+      $remainingMs = $script:ExclusiveFileLockTimeoutMs - [int]$lockWait.ElapsedMilliseconds
+      if ($remainingMs -le 0) {
+        Write-Warning "Failed to write run index after $($script:ExclusiveFileLockTimeoutMs)ms lock deadline: $($_.Exception.Message)"
         return $null
       }
+      Start-Sleep -Milliseconds ([Math]::Min($script:ExclusiveFileLockRetryDelayMs, $remainingMs))
     }
     catch {
       Write-Warning "Failed to write run index: $_"

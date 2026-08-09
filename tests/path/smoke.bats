@@ -1,8 +1,16 @@
 #!/usr/bin/env bats
 load test_helper
 
-@test "path entrypoint exists and is executable" {
-  [ -x "$PATH_APP" ]
+@test "directly invoked Unix entrypoints exist and are executable" {
+  local entrypoint
+
+  for entrypoint in \
+    "$PATH_APP" \
+    "$PROJECT_ROOT/scripts/ci-local.sh" \
+    "$PROJECT_ROOT/scripts/install-test-deps.sh" \
+    "$PROJECT_ROOT/scripts/run-workflow.sh"; do
+    [ -x "$entrypoint" ]
+  done
 }
 
 @test "dry-run exits 0" {

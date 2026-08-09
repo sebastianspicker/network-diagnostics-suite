@@ -128,9 +128,10 @@ else {
 "@
     $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($workerScript))
     $pwshPath = (Get-Process -Id $PID).Path
-    # The hard wall bound is execution timeout plus the finite tree-termination
-    # and redirected-stream drain budgets below. The child process is a killable
-    # root boundary; detached/reparented descendants remain explicitly unverified.
+    # After worker startup, the hard wall bound is execution timeout plus the
+    # finite tree-termination and redirected-stream drain budgets below. The
+    # child process is a killable root boundary; detached/reparented descendants
+    # remain explicitly unverified.
     $native = Invoke-Iperf3NativeProcess -FilePath $pwshPath `
       -Arguments @('-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', $encodedCommand) `
       -TimeoutMs $TimeoutMs -TerminationGracePeriodMs 500 -StreamDrainTimeoutMs 250

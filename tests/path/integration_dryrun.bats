@@ -112,6 +112,28 @@ load test_helper
   assert_output --regexp "mtr_results_[0-9]{8}_[0-9]{6}_[0-9]+\.json\.log"
 }
 
+@test "dry-run reports explicit JSON and table log paths without creating them" {
+  local json_log="$BATS_TEST_TMPDIR/results.json.log"
+  local table_log="$BATS_TEST_TMPDIR/summary.log"
+
+  run bash "$PATH_APP" --dry-run --no-summary --json-log "$json_log" --table-log "$table_log"
+
+  assert_success
+  assert_output --partial "Would write JSON_LOG=$json_log"
+  assert_output --partial "Would write TABLE_LOG=$table_log"
+  [ ! -e "$json_log" ]
+  [ ! -e "$table_log" ]
+}
+
+@test "quiet dry-run suppresses informational planning output" {
+  run bash "$PATH_APP" --dry-run --no-summary --quiet
+
+  assert_success
+  assert_output --partial "Dry-run complete. Planned runs: 14"
+  [[ "$output" != *"Starting MTR tests"* ]]
+  [[ "$output" != *"RUN ["* ]]
+}
+
 @test "custom hosts4 override in dry-run" {
   run bash "$PATH_APP" --types ICMP4 --rounds Standard --hosts4 custom.example.com --dry-run --no-summary
   assert_success

@@ -110,13 +110,18 @@ param(`$computerName, `$hops)
 [IO.File]::WriteAllText('$escapedPidFile', [string]`$PID)
 while (`$true) { [Threading.Thread]::Sleep(1000) }
 "@)
+        $traceTimeoutMs = 1000
+        $terminationGracePeriodMs = 500
+        $streamDrainTimeoutMs = 250
+        $workerStartupAllowanceMs = 1000
+        $maximumExpectedSeconds = ($traceTimeoutMs + $terminationGracePeriodMs + $streamDrainTimeoutMs + $workerStartupAllowanceMs) / 1000
         $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
-        $trace = Invoke-Iperf3TraceRoute -ComputerName $testComputer -Hops 1 -TimeoutMs 1000 -TraceScript $traceScript
+        $trace = Invoke-Iperf3TraceRoute -ComputerName $testComputer -Hops 1 -TimeoutMs $traceTimeoutMs -TraceScript $traceScript
 
         $stopwatch.Stop()
         $trace | Should -BeNullOrEmpty
-        $stopwatch.Elapsed.TotalSeconds | Should -BeLessThan 3
+        $stopwatch.Elapsed.TotalSeconds | Should -BeLessThan $maximumExpectedSeconds
         Test-Path -LiteralPath $pidFile -PathType Leaf | Should -BeTrue
         $traceProcessId = [int](Get-Content -LiteralPath $pidFile -Raw)
         (Get-Process -Id $traceProcessId -ErrorAction SilentlyContinue) | Should -BeNullOrEmpty
@@ -144,13 +149,19 @@ param(`$computerName, `$hops)
 "@)
         $childProcess = $null
         try {
+          $traceTimeoutMs = 2000
+          $streamDrainTimeoutMs = 250
+          # Invocation timing begins before worker startup, which is outside the
+          # native execution deadline. Retain a fixed, finite startup allowance.
+          $workerStartupAllowanceMs = 1000
+          $maximumExpectedSeconds = ($traceTimeoutMs + $streamDrainTimeoutMs + $workerStartupAllowanceMs) / 1000
           $stopwatch = [Diagnostics.Stopwatch]::StartNew()
           $testComputer = 'example.local'
-          $trace = Invoke-Iperf3TraceRoute -ComputerName $testComputer -Hops 1 -TimeoutMs 2000 -TraceScript $traceScript
+          $trace = Invoke-Iperf3TraceRoute -ComputerName $testComputer -Hops 1 -TimeoutMs $traceTimeoutMs -TraceScript $traceScript
           $stopwatch.Stop()
 
           $trace | Should -BeNullOrEmpty
-          $stopwatch.Elapsed.TotalSeconds | Should -BeLessThan 3
+          $stopwatch.Elapsed.TotalSeconds | Should -BeLessThan $maximumExpectedSeconds
           $childProcess = Get-Process -Id ([int](Get-Content -LiteralPath $pidFile -Raw)) -ErrorAction Stop
         }
         finally {

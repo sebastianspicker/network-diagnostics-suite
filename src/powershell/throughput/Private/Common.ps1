@@ -20,7 +20,10 @@ $script:InvariantCulture           = [System.Globalization.CultureInfo]::Invaria
 $script:Iperf3ProcessTimeoutBufferSec = 30  # extra seconds beyond Duration+Omit before killing iperf3
 $script:DefaultRetryCount            = 0   # retries per test on transient failure (ExitCode != 0, no JSON)
 $script:RetryDelayMs                 = 2000
-$script:ProfilesFileLockTimeoutMs    = 3000
+# Profile and run-index writers share sidecar-lock behavior. Fifteen seconds leaves
+# enough time for the supported eight-writer burst while keeping contention bounded.
+$script:ExclusiveFileLockTimeoutMs   = 15000
+$script:ExclusiveFileLockRetryDelayMs = 100
 # Threshold defaults: $null means "no threshold check" (disabled).
 $script:DefaultThresholdMinThroughputMbps = $null
 $script:DefaultThresholdMaxLossPct        = $null

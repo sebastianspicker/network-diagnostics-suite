@@ -134,9 +134,8 @@ function Invoke-LockedProfileOperation {
     $null = New-Item -ItemType Directory -Path $dir -Force
   }
   $lockPath = "$ProfilesFile.lock"
-  $maxAttempts = 30
-  $delayMs = 100
-  for ($i = 0; $i -lt $maxAttempts; $i++) {
+  $lockWait = [System.Diagnostics.Stopwatch]::StartNew()
+  while ($true) {
     $lockStream = $null
     $tempPath = $null
     try {
@@ -151,11 +150,13 @@ function Invoke-LockedProfileOperation {
         )
       }
       catch [System.IO.IOException] {
-        if ($i -ge ($maxAttempts - 1)) {
-          throw "Failed to access profiles file after $maxAttempts attempts (file locked): $ProfilesFile"
+        $remainingMs = $script:ExclusiveFileLockTimeoutMs - [int]$lockWait.ElapsedMilliseconds
+        if ($remainingMs -le 0) {
+          throw "Failed to access profiles file after $($script:ExclusiveFileLockTimeoutMs)ms lock deadline (file locked): $ProfilesFile"
         }
-        Write-Verbose "Profiles file locked, retrying in ${delayMs}ms (attempt $($i + 1)/$maxAttempts)..."
-        Start-Sleep -Milliseconds $delayMs
+        $sleepMs = [Math]::Min($script:ExclusiveFileLockRetryDelayMs, $remainingMs)
+        Write-Verbose "Profiles file locked, retrying in ${sleepMs}ms before the $($script:ExclusiveFileLockTimeoutMs)ms deadline..."
+        Start-Sleep -Milliseconds $sleepMs
         continue
       }
       # Reuse the read path so mutation honors the 1 MiB limit and corrupt-store

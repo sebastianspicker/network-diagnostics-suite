@@ -28,6 +28,32 @@ log_line() {
   fi
 }
 
+_format_summary_rows() {
+  local table_out=$1
+
+  if [[ -n "$table_out" ]] && command -v column >/dev/null 2>&1; then
+    echo "$table_out" | column -t -s $'\t' 2>/dev/null
+  else
+    printf '%s' "$table_out"
+  fi
+}
+
+_render_json_summary() {
+  local dst_name=$1
+  local dst_ip=$2
+  local table_out=$3
+
+  echo
+  echo "Results for: ${dst_name} (${dst_ip})"
+  printf 'Hop\tHost\tIP\tLoss%%\tSnt\tLast\tAvg\tBest\tWrst\tStDev\n'
+  if [[ -n "$table_out" ]]; then
+    echo "$table_out"
+  else
+    echo "(No results)"
+  fi
+  echo
+}
+
 # Pretty-print an MTR JSON result file as a hop-by-hop summary table.
 # Args:
 #   $1 - path to a single MTR JSON output file
@@ -60,33 +86,12 @@ summarize_json() {
     ] | map(tostring) | @tsv' "$f" 2>/dev/null)
   jq_status=$?
 
-  # Format with column if available, otherwise use raw TSV
-  if [[ -n "$table_out" ]] && command -v column >/dev/null 2>&1; then
-    table_out=$(echo "$table_out" | column -t -s $'\t' 2>/dev/null) || true
-  fi
+  table_out=$(_format_summary_rows "$table_out") || true
 
   if [[ -n "${TABLE_LOG:-}" ]]; then
-    {
-      echo
-      echo "Results for: ${dst_name} (${dst_ip})"
-      printf 'Hop\tHost\tIP\tLoss%%\tSnt\tLast\tAvg\tBest\tWrst\tStDev\n'
-      if [[ -n "$table_out" ]]; then
-        echo "$table_out"
-      else
-        echo "(No results)"
-      fi
-      echo
-    } | tee -a -- "$TABLE_LOG" >/dev/null
+    _render_json_summary "$dst_name" "$dst_ip" "$table_out" | tee -a -- "$TABLE_LOG" >/dev/null
   else
-    echo
-    echo "Results for: ${dst_name} (${dst_ip})"
-    printf 'Hop\tHost\tIP\tLoss%%\tSnt\tLast\tAvg\tBest\tWrst\tStDev\n'
-    if [[ -n "$table_out" ]]; then
-      echo "$table_out"
-    else
-      echo "(No results)"
-    fi
-    echo
+    _render_json_summary "$dst_name" "$dst_ip" "$table_out"
   fi
   return "$jq_status"
 }
