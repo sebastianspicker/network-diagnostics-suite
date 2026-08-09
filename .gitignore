@@ -95,6 +95,7 @@
 /.codacy/generated/
 /.codacy/logs/
 /.codacy/tools-configs/
+/docs/agent/
 /progress.md
 /WIP.md
 
