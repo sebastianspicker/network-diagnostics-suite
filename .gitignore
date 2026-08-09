@@ -76,10 +76,10 @@
 # Local development tooling and indexes
 /.claude/
 /.codegraph/
+/.continue/
 /.kilo/
 /.serena/
 /.agents/
-/.continue/
 /.prompt/
 /.prompts/
 /.aider.conf.yml
@@ -96,6 +96,7 @@
 /.codacy/logs/
 /.codacy/tools-configs/
 /progress.md
+/WIP.md
 
 # OS / Editor
 .DS_Store
