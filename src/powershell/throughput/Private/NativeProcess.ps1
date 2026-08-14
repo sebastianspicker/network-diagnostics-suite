@@ -5,50 +5,109 @@ function Get-Iperf3DescendantProcessSnapshot {
   [OutputType([pscustomobject])]
   param(
     [Parameter(Mandatory)]
-    [int]$RootProcessId
+    [int]$RootProcessId,
+    [ValidateRange(1, 30000)]
+    [int]$TimeoutMs = 1000
   )
-  $allProcesses = @()
+  $descendants = [System.Collections.Generic.List[System.Diagnostics.Process]]::new()
+  $snapshotDeadline = [System.Diagnostics.Stopwatch]::StartNew()
+  $snapshotComplete = $true
+  $snapshotErrors = [System.Collections.Generic.List[string]]::new()
   try {
-    $allProcesses = @(Get-Process -ErrorAction Stop)
     $childrenByParent = @{}
-    $processById = @{}
-    $snapshotComplete = $true
-    $snapshotErrors = [System.Collections.Generic.List[string]]::new()
-    foreach ($candidate in $allProcesses) {
-      $processById[[int]$candidate.Id] = $candidate
-      $parent = $null
-      try {
-        $parent = $candidate.Parent
-        if ($parent) {
-          $parentId = [int]$parent.Id
-          if (-not $childrenByParent.ContainsKey($parentId)) {
-            $childrenByParent[$parentId] = [System.Collections.Generic.List[int]]::new()
-          }
-          $childrenByParent[$parentId].Add([int]$candidate.Id)
+    $parentRows = @()
+    if ($IsWindows) {
+      # CIM only accepts whole-second operation timeouts. Do not begin an
+      # operation that cannot fit into the remaining discovery budget.
+      $remainingMs = $TimeoutMs - [int]$snapshotDeadline.ElapsedMilliseconds
+      if ($remainingMs -lt 1000) {
+        $snapshotComplete = $false
+        $snapshotErrors.Add("Descendant discovery has less than one second remaining from its ${TimeoutMs}ms budget; skipping the CIM process listing.")
+      }
+      else {
+        $cimTimeoutSeconds = [math]::Max(1, [math]::Floor($remainingMs / 1000))
+        try {
+          $parentRows = @(Get-CimInstance -ClassName Win32_Process -Property ProcessId, ParentProcessId `
+              -OperationTimeoutSec $cimTimeoutSeconds -ErrorAction Stop)
+        }
+        catch {
+          $snapshotComplete = $false
+          $snapshotErrors.Add("Descendant process listing failed within its ${cimTimeoutSeconds}s CIM operation budget: $($_.Exception.Message)")
         }
       }
-      catch {
-        $parentError = $_.Exception.Message
-        $candidateExited = $false
-        try { $candidateExited = [bool]$candidate.HasExited }
-        catch { Write-Verbose "Process $($candidate.Id) state became unavailable during the descendant snapshot." }
-        if ($candidateExited) {
-          Write-Verbose "Process $($candidate.Id) exited while its parent relationship was inspected."
+    }
+    else {
+      $psCommand = (Get-Command -Name ps -CommandType Application -ErrorAction Stop).Source
+      $psInfo = [System.Diagnostics.ProcessStartInfo]::new()
+      $psInfo.FileName = $psCommand
+      $psInfo.ArgumentList.Add('-eo')
+      $psInfo.ArgumentList.Add('pid=,ppid=')
+      $psInfo.RedirectStandardOutput = $true
+      $psInfo.RedirectStandardError = $true
+      $psInfo.UseShellExecute = $false
+      $psInfo.CreateNoWindow = $true
+      $psProcess = $null
+      try {
+        $psProcess = [System.Diagnostics.Process]::Start($psInfo)
+        $stdOutTask = $psProcess.StandardOutput.ReadToEndAsync()
+        $stdErrTask = $psProcess.StandardError.ReadToEndAsync()
+        $remainingMs = $TimeoutMs - [int]$snapshotDeadline.ElapsedMilliseconds
+        if ($remainingMs -lt 1 -or -not $psProcess.WaitForExit($remainingMs)) {
+          try { if (-not $psProcess.HasExited) { $psProcess.Kill($true) } } catch { Write-Verbose 'Could not stop the descendant-discovery process listing.' }
+          $snapshotComplete = $false
+          $snapshotErrors.Add("Descendant discovery exceeded its ${TimeoutMs}ms budget while listing processes.")
         }
         else {
-          $snapshotComplete = $false
-          $snapshotErrors.Add("Parent relationship unavailable for process $($candidate.Id): $parentError")
+          $remainingMs = $TimeoutMs - [int]$snapshotDeadline.ElapsedMilliseconds
+          if ($remainingMs -lt 1 -or -not $stdOutTask.Wait($remainingMs)) {
+            $snapshotComplete = $false
+            $snapshotErrors.Add("Descendant discovery exceeded its ${TimeoutMs}ms budget while reading the process listing.")
+          }
+          elseif ($psProcess.ExitCode -ne 0) {
+            $snapshotComplete = $false
+            $snapshotErrors.Add("Descendant process listing failed: $($stdErrTask.Result)")
+          }
+          else {
+            foreach ($line in ([string]$stdOutTask.Result -split "`r?`n")) {
+              if ($snapshotDeadline.ElapsedMilliseconds -ge $TimeoutMs) {
+                $snapshotComplete = $false
+                $snapshotErrors.Add("Descendant discovery exceeded its ${TimeoutMs}ms budget while parsing the process listing.")
+                break
+              }
+              if ($line -match '^\s*(\d+)\s+(\d+)\s*$') {
+                $parentRows += [pscustomobject]@{ ProcessId = [int]$matches[1]; ParentProcessId = [int]$matches[2] }
+              }
+            }
+          }
         }
       }
       finally {
-        if ($parent) { $parent.Dispose() }
+        if ($psProcess) { $psProcess.Dispose() }
       }
+    }
+
+    foreach ($row in $parentRows) {
+      if ($snapshotDeadline.ElapsedMilliseconds -ge $TimeoutMs) {
+        $snapshotComplete = $false
+        $snapshotErrors.Add("Descendant discovery exceeded its ${TimeoutMs}ms budget while indexing process relationships.")
+        break
+      }
+      $parentId = [int]$row.ParentProcessId
+      if (-not $childrenByParent.ContainsKey($parentId)) {
+        $childrenByParent[$parentId] = [System.Collections.Generic.List[int]]::new()
+      }
+      $childrenByParent[$parentId].Add([int]$row.ProcessId)
     }
 
     $descendantIds = [System.Collections.Generic.List[int]]::new()
     $pending = [System.Collections.Generic.Queue[int]]::new()
     $pending.Enqueue($RootProcessId)
-    while ($pending.Count -gt 0) {
+    while ($snapshotComplete -and $pending.Count -gt 0) {
+      if ($snapshotDeadline.ElapsedMilliseconds -ge $TimeoutMs) {
+        $snapshotComplete = $false
+        $snapshotErrors.Add("Descendant discovery exceeded its ${TimeoutMs}ms budget while resolving the process tree.")
+        break
+      }
       $parentId = $pending.Dequeue()
       if (-not $childrenByParent.ContainsKey($parentId)) { continue }
       foreach ($childId in $childrenByParent[$parentId]) {
@@ -58,19 +117,29 @@ function Get-Iperf3DescendantProcessSnapshot {
       }
     }
 
-    $descendants = @($descendantIds | ForEach-Object { $processById[$_] })
-    foreach ($candidate in $allProcesses) {
-      if ($descendantIds -notcontains [int]$candidate.Id) { $candidate.Dispose() }
+    foreach ($descendantId in $descendantIds) {
+      if ($snapshotDeadline.ElapsedMilliseconds -ge $TimeoutMs) {
+        $snapshotComplete = $false
+        $snapshotErrors.Add("Descendant discovery exceeded its ${TimeoutMs}ms budget while opening tracked processes.")
+        break
+      }
+      try {
+        $descendants.Add((Get-Process -Id $descendantId -ErrorAction Stop))
+      }
+      catch {
+        $snapshotComplete = $false
+        $snapshotErrors.Add("Tracked descendant process $descendantId became unavailable: $($_.Exception.Message)")
+      }
     }
     return [pscustomobject]@{
       Succeeded   = $snapshotComplete
-      Processes  = $descendants
+      Processes  = @($descendants)
       ProcessIds = [int[]]@($descendantIds)
       Error      = if ($snapshotComplete) { $null } else { $snapshotErrors -join ' ' }
     }
   }
   catch {
-    foreach ($candidate in $allProcesses) {
+    foreach ($candidate in $descendants) {
       try { $candidate.Dispose() } catch { Write-Verbose "Could not dispose process snapshot $($candidate.Id)." }
     }
     return [pscustomobject]@{
@@ -92,7 +161,10 @@ function Stop-Iperf3ProcessAfterTimeout {
     [int]$GracePeriodMs = 5000
   )
   $processId = [int]$Process.Id
-  $snapshot = Get-Iperf3DescendantProcessSnapshot -RootProcessId $processId
+  # This budget covers pre-kill discovery and post-kill verification together;
+  # no unbounded process-tree work may extend a native operation's deadline.
+  $terminationDeadline = [System.Diagnostics.Stopwatch]::StartNew()
+  $snapshot = Get-Iperf3DescendantProcessSnapshot -RootProcessId $processId -TimeoutMs $GracePeriodMs
   $trackedProcesses = @($Process) + @($snapshot.Processes)
   if ($Process.HasExited) {
     foreach ($descendant in $snapshot.Processes) { $descendant.Dispose() }
@@ -124,18 +196,17 @@ function Stop-Iperf3ProcessAfterTimeout {
     }
   }
 
-  $deadline = [System.Diagnostics.Stopwatch]::StartNew()
   $unterminated = @($trackedProcesses)
-  while ($unterminated.Count -gt 0 -and $deadline.ElapsedMilliseconds -lt $GracePeriodMs) {
+  while ($unterminated.Count -gt 0 -and $terminationDeadline.ElapsedMilliseconds -lt $GracePeriodMs) {
     $unterminated = @($unterminated | Where-Object {
         try { -not $_.HasExited } catch { $true }
       })
     if ($unterminated.Count -gt 0) {
-      $remainingMs = $GracePeriodMs - [int]$deadline.ElapsedMilliseconds
+      $remainingMs = $GracePeriodMs - [int]$terminationDeadline.ElapsedMilliseconds
       Start-Sleep -Milliseconds ([math]::Min(25, [math]::Max($remainingMs, 1)))
     }
   }
-  $deadline.Stop()
+  $terminationDeadline.Stop()
   $unterminated = @($trackedProcesses | Where-Object {
       try { -not $_.HasExited } catch { $true }
     })

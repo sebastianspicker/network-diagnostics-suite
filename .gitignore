@@ -24,12 +24,17 @@
 .env.*
 !.env.example
 !.env.*.example
+!.env.sample
+!.env.template
+.npmrc.local
 *.pem
 *.key
 *.pfx
 *.p12
 *.crt
 *.cer
+*.jks
+*.keystore
 /credentials.local.json
 /secrets.local.json
 /*.credentials.local.json
@@ -65,6 +70,9 @@
 /AGENTS.md
 /CLAUDE.md
 /GEMINI.md
+/AUDIT_LEDGER.md
+/remediation-ledger.md
+/plan.md
 /PROMPT.md
 /PROMPTS.md
 /.github/copilot-instructions.md
@@ -96,6 +104,43 @@
 /.codacy/logs/
 /.codacy/tools-configs/
 /progress.md
+
+# Nested local tooling state
+.agents/
+.claude/
+.codex/
+.codegraph/
+.kilo/
+.serena/
+.cursor/
+.repowise/
+
+# Nested generated artifacts and local database sidecars
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+playwright-report/
+blob-report/
+junit*.xml
+*.sarif
+node_modules/
+target/
+.build/
+DerivedData/
+xcuserdata/
+*.db-wal
+*.db-shm
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+*.local.db
+*.local.sqlite
+*.local.sqlite3
 
 # OS / Editor
 .DS_Store

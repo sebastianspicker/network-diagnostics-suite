@@ -16,6 +16,23 @@ default_hosts_config_path() {
   echo "$repo_root/config/hosts.conf"
 }
 
+# Normalize one hosts.conf line into a tab-delimited key/value pair.
+# Returns 1 for comments, blanks, malformed lines, and empty values.
+_parse_hosts_config_entry() {
+  local line key value
+  line=$(trim "$1")
+
+  [[ -n "$line" ]] || return 1
+  [[ "$line" != \#* ]] || return 1
+  [[ "$line" == *=* ]] || return 1
+
+  key=$(trim "${line%%=*}")
+  value=$(trim "${line#*=}")
+  [[ -n "$value" ]] || return 1
+
+  printf '%s\t%s\n' "${key,,}" "$value"
+}
+
 # Parse a hosts.conf file and populate HOSTS_IPV4 / HOSTS_IPV6 arrays.
 # Args:
 #   $1 - path to config file (key=value format, keys: ipv4, ipv6)
@@ -23,28 +40,16 @@ default_hosts_config_path() {
 #   Sets global arrays HOSTS_IPV4 and HOSTS_IPV6 when entries are found
 load_hosts_from_config() {
   local config_path=$1
-  local line raw_key raw_val key val
+  local line entry key val
   local -a loaded4=()
   local -a loaded6=()
 
   [[ -f "$config_path" ]] || return 0
 
   while IFS= read -r line || [[ -n "$line" ]]; do
-    line=$(trim "$line")
-    [[ -n "$line" ]] || continue
-    [[ "$line" == \#* ]] && continue
-
-    if [[ "$line" != *=* ]]; then
-      continue
-    fi
-
-    raw_key=${line%%=*}
-    raw_val=${line#*=}
-    key=$(trim "$raw_key")
-    val=$(trim "$raw_val")
-    key=${key,,}
-
-    [[ -n "$val" ]] || continue
+    entry=$(_parse_hosts_config_entry "$line") || continue
+    key=${entry%%$'\t'*}
+    val=${entry#*$'\t'}
 
     case "$key" in
       ipv4)

@@ -61,111 +61,125 @@ Options:
 USAGE
 }
 
-main() {
-	local log_dir="${LOG_DIR:-$HOME/logs}"
-	local json_log=""
-	local table_log=""
-	local types_csv=""
-	local rounds_csv=""
-	local hosts4_csv=""
-	local hosts6_csv=""
-	local list_types=0
-	local list_rounds=0
-	local types_set=0
-	local rounds_set=0
-	local hosts4_set=0
-	local hosts6_set=0
+initialize_options() {
+	log_dir="${LOG_DIR:-$HOME/logs}"
+	json_log=""
+	table_log=""
+	types_csv=""
+	rounds_csv=""
+	hosts4_csv=""
+	hosts6_csv=""
+	list_types=0
+	list_rounds=0
+	types_set=0
+	rounds_set=0
+	hosts4_set=0
+	hosts6_set=0
 
 	DO_SUMMARY=1
 	DRY_RUN=0
 	QUIET=0
 	MTR_TIMEOUT_SECONDS=${MTR_TIMEOUT_SECONDS:-360}
+}
 
+parse_value_option() {
+	local option=$1
+	local value=$2
+
+	case "$option" in
+	--log-dir)
+		log_dir=$value
+		;;
+	--json-log)
+		json_log=$value
+		;;
+	--table-log)
+		table_log=$value
+		;;
+	--types)
+		types_csv=$value
+		types_set=1
+		;;
+	--rounds)
+		rounds_csv=$value
+		rounds_set=1
+		;;
+	--hosts4)
+		hosts4_csv=$value
+		hosts4_set=1
+		;;
+	--hosts6)
+		hosts6_csv=$value
+		hosts6_set=1
+		;;
+	esac
+}
+
+parse_flag_option() {
+	case "$1" in
+	--list-types)
+		list_types=1
+		;;
+	--list-rounds)
+		list_rounds=1
+		;;
+	--no-summary)
+		DO_SUMMARY=0
+		;;
+	--dry-run)
+		DRY_RUN=1
+		;;
+	--quiet)
+		# shellcheck disable=SC2034
+		QUIET=1
+		;;
+	-h | --help)
+		usage
+		exit 0
+		;;
+	--version)
+		echo "test-network-path.sh v${VERSION}"
+		exit 0
+		;;
+	--)
+		return 2
+		;;
+	*)
+		return 1
+		;;
+	esac
+}
+
+parse_options() {
 	while [[ $# -gt 0 ]]; do
 		case "$1" in
-		--log-dir)
-			[[ $# -ge 2 ]] || die "--log-dir requires an argument"
-			validate_path_option "--log-dir" "$2"
-			log_dir=$2
+		--log-dir | --json-log | --table-log)
+			require_path_option "$1" "$#" "${2:-}"
+			parse_value_option "$1" "$2"
 			shift 2
 			;;
-		--json-log)
-			[[ $# -ge 2 ]] || die "--json-log requires an argument"
-			validate_path_option "--json-log" "$2"
-			json_log=$2
+		--types | --rounds | --hosts4 | --hosts6)
+			[[ $# -ge 2 ]] || die "$1 requires an argument"
+			parse_value_option "$1" "$2"
 			shift 2
-			;;
-		--table-log)
-			[[ $# -ge 2 ]] || die "--table-log requires an argument"
-			validate_path_option "--table-log" "$2"
-			table_log=$2
-			shift 2
-			;;
-		--types)
-			[[ $# -ge 2 ]] || die "--types requires an argument"
-			types_csv=$2
-			types_set=1
-			shift 2
-			;;
-		--rounds)
-			[[ $# -ge 2 ]] || die "--rounds requires an argument"
-			rounds_csv=$2
-			rounds_set=1
-			shift 2
-			;;
-		--hosts4)
-			[[ $# -ge 2 ]] || die "--hosts4 requires an argument"
-			hosts4_csv=$2
-			hosts4_set=1
-			shift 2
-			;;
-		--hosts6)
-			[[ $# -ge 2 ]] || die "--hosts6 requires an argument"
-			hosts6_csv=$2
-			hosts6_set=1
-			shift 2
-			;;
-		--list-types)
-			list_types=1
-			shift
-			;;
-		--list-rounds)
-			list_rounds=1
-			shift
-			;;
-		--no-summary)
-			DO_SUMMARY=0
-			shift
-			;;
-		--dry-run)
-			DRY_RUN=1
-			shift
-			;;
-		--quiet)
-			# shellcheck disable=SC2034
-			QUIET=1
-			shift
-			;;
-		-h | --help)
-			usage
-			exit 0
-			;;
-		--version)
-			echo "test-network-path.sh v${VERSION}"
-			exit 0
-			;;
-		--)
-			shift
-			break
 			;;
 		*)
-			die "Unknown argument: $1 (use --help)"
+			parse_flag_option "$1" || {
+				[[ $? -eq 2 ]] && {
+					shift
+					break
+				}
+				die "Unknown argument: $1 (use --help)"
+			}
+			shift
 			;;
 		esac
 	done
 
 	[[ $# -eq 0 ]] || die "Unexpected positional args: $*"
+}
 
+validate_startup_options() {
 	# Validate log_dir regardless of source (env, CLI, or default)
 	validate_path_option "log-dir" "$log_dir"
 	[[ "$MTR_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]] || die "MTR_TIMEOUT_SECONDS must be a positive integer."
@@ -181,7 +195,9 @@ main() {
 		print_list "${ALL_ROUNDS[@]}"
 		exit 0
 	fi
+}
 
+configure_selections() {
 	TEST_ORDER=("${DEFAULT_TEST_TYPES[@]}")
 	ROUND_ORDER=("${DEFAULT_ROUNDS[@]}")
 	HOSTS_IPV4=("${DEFAULT_HOSTS_IPV4[@]}")
@@ -215,7 +231,9 @@ main() {
 	for h in "${HOSTS_IPV4[@]}" "${HOSTS_IPV6[@]}"; do
 		validate_host "$h"
 	done
+}
 
+verify_dependencies() {
 	if ((DRY_RUN == 0)); then
 		require_cmd mtr
 		require_cmd jq
@@ -223,58 +241,82 @@ main() {
 	if ((DO_SUMMARY)) && ((DRY_RUN == 0)); then
 		require_cmd column
 	fi
+}
 
+prepare_dry_run_logs() {
+	local ts=$1
+	would_json_log=${json_log:-"$log_dir/mtr_results_${ts}.json.log"}
+	would_table_log=${table_log:-"$log_dir/mtr_summary_${ts}.log"}
+	JSON_LOG=""
+	TABLE_LOG=""
+}
+
+assign_real_log_paths() {
+	local ts=$1
+	JSON_LOG=${json_log:-"$log_dir/mtr_results_${ts}.json.log"}
+	TABLE_LOG=${table_log:-"$log_dir/mtr_summary_${ts}.log"}
+}
+
+prepare_real_log_directories() {
+	mkdir -p -- "$log_dir" || die "Failed to create log directory: $log_dir"
+	if [[ -n "$json_log" ]]; then
+		mkdir -p -- "$(dirname "$JSON_LOG")" || die "Failed to create directory for JSON log"
+	fi
+	if [[ -n "$table_log" ]]; then
+		mkdir -p -- "$(dirname "$TABLE_LOG")" || die "Failed to create directory for table log"
+	fi
+}
+
+initialize_real_logs() {
+	if [[ -d "$JSON_LOG" ]] || [[ -d "$TABLE_LOG" ]]; then
+		die "Log path must not be an existing directory: JSON_LOG=$JSON_LOG TABLE_LOG=$TABLE_LOG"
+	fi
+
+	: >"$JSON_LOG"
+	: >"$TABLE_LOG"
+}
+
+prepare_logs() {
 	local ts
-	local would_json_log=""
-	local would_table_log=""
 	ts=$(date +'%Y%m%d_%H%M%S')_$$
 
 	if ((DRY_RUN)); then
-		would_json_log=${json_log:-"$log_dir/mtr_results_${ts}.json.log"}
-		would_table_log=${table_log:-"$log_dir/mtr_summary_${ts}.log"}
-		JSON_LOG=""
-		TABLE_LOG=""
-	else
-		JSON_LOG=${json_log:-"$log_dir/mtr_results_${ts}.json.log"}
-		TABLE_LOG=${table_log:-"$log_dir/mtr_summary_${ts}.log"}
-
-		mkdir -p -- "$log_dir" || die "Failed to create log directory: $log_dir"
-		if [[ -n "$json_log" ]]; then
-			mkdir -p -- "$(dirname "$JSON_LOG")" || die "Failed to create directory for JSON log"
-		fi
-		if [[ -n "$table_log" ]]; then
-			mkdir -p -- "$(dirname "$TABLE_LOG")" || die "Failed to create directory for table log"
-		fi
-
-		if [[ -d "$JSON_LOG" ]] || [[ -d "$TABLE_LOG" ]]; then
-			die "Log path must not be an existing directory: JSON_LOG=$JSON_LOG TABLE_LOG=$TABLE_LOG"
-		fi
-
-		: >"$JSON_LOG"
-		: >"$TABLE_LOG"
+		prepare_dry_run_logs "$ts"
+		return
 	fi
 
+	assign_real_log_paths "$ts"
+	prepare_real_log_directories
+	initialize_real_logs
+}
+
+cleanup_and_exit() {
+	local sig=${1:-}
+	local code=${2:-130}
+	if [[ -n "${CURRENT_MTR_PID:-}" ]]; then
+		kill -KILL "$CURRENT_MTR_PID" 2>/dev/null || true
+	fi
+	rm -f "${CURRENT_TMP:-}" 2>/dev/null
+	if [[ -n "$sig" ]]; then
+		echo "Interrupted (SIG$sig)" >&2
+		exit "$code"
+	fi
+}
+
+install_cleanup_traps() {
 	CURRENT_TMP=""
 	CURRENT_MTR_PID=""
-	cleanup_and_exit() {
-		local sig=${1:-}
-		local code=${2:-130}
-		if [[ -n "${CURRENT_MTR_PID:-}" ]]; then
-			kill -KILL "$CURRENT_MTR_PID" 2>/dev/null || true
-		fi
-		rm -f "${CURRENT_TMP:-}" 2>/dev/null
-		if [[ -n "$sig" ]]; then
-			echo "Interrupted (SIG$sig)" >&2
-			exit "$code"
-		fi
-	}
 	trap 'cleanup_and_exit INT 130' INT
 	trap 'cleanup_and_exit TERM 143' TERM
 	trap 'cleanup_and_exit' EXIT
+}
 
+prepare_run_plan() {
 	compute_run_plan
 	((TOTAL_RUNS > 0)) || die "No runs planned. Check selected rounds/types/hosts."
+}
 
+announce_run_plan() {
 	log_line INFO "Starting MTR tests (planned runs: $TOTAL_RUNS)"
 	log_line INFO "Selected rounds: ${ROUND_ORDER[*]}"
 	log_line INFO "Selected types: ${TEST_ORDER[*]}"
@@ -289,11 +331,13 @@ main() {
 		log_line INFO "JSON_LOG=$JSON_LOG"
 		log_line INFO "TABLE_LOG=$TABLE_LOG"
 	fi
+}
 
+execute_run_plan() {
 	RUN_OK=0
 	RUN_FAIL=0
 
-	local start_ts
+	local start_ts end_ts
 	start_ts=$(date +%s)
 
 	local entry round type host idx=0
@@ -303,10 +347,11 @@ main() {
 		execute_single_run "$round" "$type" "$host" "$idx"
 	done
 
-	local end_ts elapsed
 	end_ts=$(date +%s)
 	elapsed=$((end_ts - start_ts))
+}
 
+finish_run() {
 	if ((DRY_RUN)); then
 		log_line SUMMARY "Dry-run complete. Planned runs: $TOTAL_RUNS"
 		return 0
@@ -318,6 +363,27 @@ main() {
 	if ((RUN_FAIL > 0)); then
 		exit 1
 	fi
+}
+
+main() {
+	local log_dir json_log table_log
+	local types_csv rounds_csv hosts4_csv hosts6_csv
+	local list_types list_rounds types_set rounds_set hosts4_set hosts6_set
+	local would_json_log=""
+	local would_table_log=""
+	local elapsed=0
+
+	initialize_options
+	parse_options "$@"
+	validate_startup_options
+	configure_selections
+	verify_dependencies
+	prepare_logs
+	install_cleanup_traps
+	prepare_run_plan
+	announce_run_plan
+	execute_run_plan
+	finish_run
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

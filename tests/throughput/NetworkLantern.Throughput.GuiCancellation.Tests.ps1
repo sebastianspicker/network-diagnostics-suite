@@ -19,7 +19,7 @@ Describe 'Network Lantern throughput helpers' {
 
   Context 'GUI native-process cancellation wiring' {
     BeforeAll {
-      $guiPath = Join-Path $PSScriptRoot '../../apps/throughput/Measure-NetworkThroughput-GUI.ps1'
+      $lifecyclePath = Join-Path $PSScriptRoot '../../apps/throughput/Private/GuiRunLifecycle.ps1'
       $guiFunctions = @(
         'New-RunCancellationContext', 'Set-RunCancellationSignal',
         'Get-VerifiedRunCleanupRecord', 'Get-ValidatedRunWorkerIdentity',
@@ -27,8 +27,8 @@ Describe 'Network Lantern throughput helpers' {
       )
       $guiTokens = $null
       $guiParseErrors = $null
-      $guiAst = [System.Management.Automation.Language.Parser]::ParseFile($guiPath, [ref]$guiTokens, [ref]$guiParseErrors)
-      if (@($guiParseErrors).Count -gt 0) { throw "GUI source did not parse: $($guiParseErrors[0].Message)" }
+      $guiAst = [System.Management.Automation.Language.Parser]::ParseFile($lifecyclePath, [ref]$guiTokens, [ref]$guiParseErrors)
+      if (@($guiParseErrors).Count -gt 0) { throw "GUI lifecycle helper did not parse: $($guiParseErrors[0].Message)" }
       foreach ($functionName in $guiFunctions) {
         $definition = $guiAst.Find({
             param($node)
@@ -215,13 +215,18 @@ Export-ModuleMember -Function Measure-NetworkThroughput
 
     It 'keeps the form and cancellation context alive while cleanup remains pending' {
       $guiPath = Join-Path $PSScriptRoot '../../apps/throughput/Measure-NetworkThroughput-GUI.ps1'
+      $lifecyclePath = Join-Path $PSScriptRoot '../../apps/throughput/Private/GuiRunLifecycle.ps1'
       $guiSource = Get-Content -LiteralPath $guiPath -Raw
+      $lifecycleSource = Get-Content -LiteralPath $lifecyclePath -Raw
       $formClosingSource = $guiSource.Substring($guiSource.IndexOf('$form.Add_FormClosing'))
 
       $formClosingSource | Should -Match '\$released\s*=\s*Stop-CurrentRunJob'
       $formClosingSource | Should -Match 'if\s*\(-not\s+\$released\)\s*\{[\s\S]*?\$formEventArgs\.Cancel\s*=\s*\$true'
       $formClosingSource | Should -Match 'if\s*\(-not\s+\$script:RunJob\)\s*\{[\s\S]*?Clear-RunCancellationContext'
-      $guiSource | Should -Match '\$script:DeferredRunJobs\s*=\s*@\(\$script:DeferredRunJobs\)\s*\+\s*@\(\$script:RunJob\)'
+      $lifecycleSource | Should -Match '\$script:DeferredRunJobs\s*=\s*@\(\$script:DeferredRunJobs\)\s*\+\s*@\(\$script:RunJob\)'
+      $lifecycleSource | Should -Match 'function\s+Start-RunFromUi'
+      $guiSource | Should -Match '\$btnRun\.Add_Click\(\{[\s\S]*?Start-RunFromUi'
+      $guiSource | Should -Match '\$btnWhatIf\.Add_Click\(\{[\s\S]*?Start-RunFromUi[\s\S]*?-WhatIf'
     }
 
   }

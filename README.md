@@ -17,6 +17,16 @@ fixture values and never runs diagnostics, contacts targets, writes files, or
 changes settings. Use a source checkout and the commands in this README for
 real, authorized diagnostic work.
 
+Serve the same tracked artifact locally from the repository root:
+
+```bash
+python3 -m http.server 8000 --bind 127.0.0.1 --directory site
+```
+
+Then open <http://127.0.0.1:8000/>. This repository does not contain a GitHub
+Pages deployment workflow, so the hosted page is a visual reference rather
+than proof that the current worktree has been deployed.
+
 The tools run locally and write files for later inspection. The repository does
 not provide a service, remote API, installer, container image, or package.
 

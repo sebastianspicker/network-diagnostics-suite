@@ -134,52 +134,38 @@ function Invoke-LockedProfileOperation {
     $null = New-Item -ItemType Directory -Path $dir -Force
   }
   $lockPath = "$ProfilesFile.lock"
-  $maxAttempts = 30
-  $delayMs = 100
-  for ($i = 0; $i -lt $maxAttempts; $i++) {
-    $lockStream = $null
-    $tempPath = $null
+  $lockStream = $null
+  $tempPath = $null
+  try {
+    # Lock a stable sidecar rather than the replace target itself. Readers see
+    # either the old complete file or the new complete file after the rename.
     try {
-      # Lock a stable sidecar rather than the replace target itself. Readers see
-      # either the old complete file or the new complete file after the rename.
-      try {
-        $lockStream = [System.IO.File]::Open(
-          $lockPath,
-          [System.IO.FileMode]::OpenOrCreate,
-          [System.IO.FileAccess]::ReadWrite,
-          [System.IO.FileShare]::None
-        )
-      }
-      catch [System.IO.IOException] {
-        if ($i -ge ($maxAttempts - 1)) {
-          throw "Failed to access profiles file after $maxAttempts attempts (file locked): $ProfilesFile"
-        }
-        Write-Verbose "Profiles file locked, retrying in ${delayMs}ms (attempt $($i + 1)/$maxAttempts)..."
-        Start-Sleep -Milliseconds $delayMs
-        continue
-      }
-      # Reuse the read path so mutation honors the 1 MiB limit and corrupt-store
-      # backup behavior before applying any change.
-      $store = Read-Iperf3ProfilesStore -ProfilesFile $ProfilesFile -StrictConfiguration:$StrictConfiguration
-      $store = & $Operation $store
-      $store['updatedUtc'] = (Get-Date).ToUniversalTime().ToString('o')
-      $json = $store | ConvertTo-Json -Depth 10
-      $serializedBytes = [System.Text.Encoding]::UTF8.GetByteCount([string]$json)
-      if ($serializedBytes -gt 1MB) {
-        throw "Profiles file would exceed maximum size (1 MB): $ProfilesFile"
-      }
-      $tempName = ".{0}.{1}.tmp" -f ([System.IO.Path]::GetFileName($ProfilesFile)), ([guid]::NewGuid().ToString('N'))
-      $tempPath = Join-Path -Path (Split-Path -Parent $ProfilesFile) -ChildPath $tempName
-      Set-Content -LiteralPath $tempPath -Value $json -Encoding UTF8 -NoNewline
-      [System.IO.File]::Move($tempPath, $ProfilesFile, $true)
-      $tempPath = $null
-      return $store
+      $lockStream = Open-ExclusiveSidecarLock -LockPath $lockPath
     }
-    finally {
-      if ($lockStream) { $lockStream.Dispose() }
-      if ($tempPath -and (Test-Path -LiteralPath $tempPath)) {
-        Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
-      }
+    catch [System.IO.IOException] {
+      throw "Failed to access profiles file after $($script:ExclusiveFileLockTimeoutMs)ms lock deadline (file locked): $ProfilesFile"
+    }
+    # Reuse the read path so mutation honors the 1 MiB limit and corrupt-store
+    # backup behavior before applying any change.
+    $store = Read-Iperf3ProfilesStore -ProfilesFile $ProfilesFile -StrictConfiguration:$StrictConfiguration
+    $store = & $Operation $store
+    $store['updatedUtc'] = (Get-Date).ToUniversalTime().ToString('o')
+    $json = $store | ConvertTo-Json -Depth 10
+    $serializedBytes = [System.Text.Encoding]::UTF8.GetByteCount([string]$json)
+    if ($serializedBytes -gt 1MB) {
+      throw "Profiles file would exceed maximum size (1 MB): $ProfilesFile"
+    }
+    $tempName = ".{0}.{1}.tmp" -f ([System.IO.Path]::GetFileName($ProfilesFile)), ([guid]::NewGuid().ToString('N'))
+    $tempPath = Join-Path -Path (Split-Path -Parent $ProfilesFile) -ChildPath $tempName
+    Set-Content -LiteralPath $tempPath -Value $json -Encoding UTF8 -NoNewline
+    [System.IO.File]::Move($tempPath, $ProfilesFile, $true)
+    $tempPath = $null
+    return $store
+  }
+  finally {
+    if ($lockStream) { $lockStream.Dispose() }
+    if ($tempPath -and (Test-Path -LiteralPath $tempPath)) {
+      Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
     }
   }
 }

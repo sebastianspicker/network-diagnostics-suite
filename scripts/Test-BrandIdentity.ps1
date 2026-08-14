@@ -7,10 +7,11 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $legacyIdentityPattern = '(?i)(network-diagnostics-suite|NetworkDiagnosticsSuite|Invoke-NetworkDiagnostics|NetPathSuite|mtr-test-suite|iPerf3Test(?:-GUI)?\.ps1|Iperf3TestSuite|Optimize-NetworkPath|WindowsUdpJitterOptimization|Get-Nds|(?-i:\bNDS(?:[._-])))'
-$allowedFilePattern = '^(CHANGELOG\.md|docs/(archive|migration)/.*|scripts/Test-BrandIdentity\.ps1|tests/windows-tuning/NetworkLantern\.WindowsTuning\.Tests\.ps1|apps/windows-tuning/Invoke-NetworkPathTuning\.ps1|src/powershell/windows-tuning/NetworkLantern\.WindowsTuning/(Private/(Actions\.BackupRestore|Constants)\.ps1|Public/Invoke-NetworkPathTuning\.ps1))$'
+$allowedFilePattern = '^(CHANGELOG\.md|docs/(archive|migration)/.*|scripts/Test-BrandIdentity\.ps1|tests/windows-tuning/NetworkLantern\.WindowsTuning(?:\.Restore(?:Manifest|Staging))?\.Tests\.ps1|apps/windows-tuning/Invoke-NetworkPathTuning\.ps1|src/powershell/windows-tuning/NetworkLantern\.WindowsTuning/(Private/(Actions\.BackupRestore|Constants)\.ps1|Public/Invoke-NetworkPathTuning\.ps1))$'
 $allowedMigrationLinkPattern = '(docs/)?migration/from-(network-diagnostics-suite|mtr-test-suite|iperf3-test-suite|windows-udp-jitter-optimization)\.md'
 $textFilePattern = '(?i)(^Makefile$|\.(bash|json|md|ps1|psd1|psm1|sh|ya?ml)$)'
 $protectedPathPattern = '(?i)((^|/)\.env($|\.)|\.(key|p12|pem|pfx)$|(^|/)id_(ed25519|rsa)(\.pub)?$)'
+$generatedMetadataPathPattern = '^(\.repowise)(/|$)'
 
 $relativePaths = @(
   & git -C $RepoRoot ls-files --cached --others --exclude-standard |
@@ -24,6 +25,7 @@ $findings = [System.Collections.Generic.List[string]]::new()
 foreach ($relativePath in $relativePaths) {
   $normalizedPath = $relativePath.Replace('\', '/')
   if ($normalizedPath -notmatch $textFilePattern -or $normalizedPath -match $protectedPathPattern) { continue }
+  if ($normalizedPath -match $generatedMetadataPathPattern) { continue }
   if ($normalizedPath -match $allowedFilePattern) { continue }
 
   $fullPath = Join-Path -Path $RepoRoot -ChildPath $relativePath

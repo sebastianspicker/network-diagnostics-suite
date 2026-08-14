@@ -92,6 +92,18 @@ require_path_option() {
   validate_path_option "$opt_name" "$val"
 }
 
+_reject_forbidden_host_characters() {
+  local host=$1
+  local index
+  local -a forbidden_chars=('/' '|' ';' '&' '`' '$')
+  local -a forbidden_labels=("'/'" "'|'" "';'" "'&'" "backtick" "'$'")
+
+  for ((index = 0; index < ${#forbidden_chars[@]}; index++)); do
+    [[ "$host" != *"${forbidden_chars[$index]}"* ]] ||
+      die "Host name must not contain ${forbidden_labels[$index]}: $host"
+  done
+}
+
 # Reject host names that are empty or contain shell-unsafe characters.
 # Args:
 #   $1 - hostname or IP address to validate
@@ -102,11 +114,6 @@ validate_host() {
   [[ -n "$host" ]] || die "Host name must not be empty"
   [[ "$host" != -* ]] || die "Host name must not look like an option (starts with -): $host"
   [[ "$host" != *[[:space:]]* ]] || die "Host name must not contain whitespace: $host"
-  [[ "$host" != *"/"* ]] || die "Host name must not contain '/': $host"
-  [[ "$host" != *"|"* ]] || die "Host name must not contain '|': $host"
-  [[ "$host" != *";"* ]] || die "Host name must not contain ';': $host"
-  [[ "$host" != *"&"* ]] || die "Host name must not contain '&': $host"
-  [[ "$host" != *'`'* ]] || die "Host name must not contain backtick: $host"
-  [[ "$host" != *'$'* ]] || die "Host name must not contain '\$': $host"
+  _reject_forbidden_host_characters "$host"
   [[ "$host" != *[[:cntrl:]]* ]] || die "Host name must not contain control characters: $host"
 }

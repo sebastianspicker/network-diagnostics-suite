@@ -177,6 +177,17 @@ setup() {
   assert_failure
 }
 
+@test "require_path_option accepts a present safe path" {
+  run require_path_option "--log-dir" 2 "/tmp/logs"
+  assert_success
+}
+
+@test "require_path_option reports a missing path argument" {
+  run require_path_option "--log-dir" 1 ""
+  assert_failure
+  assert_output "ERROR: --log-dir requires an argument"
+}
+
 # Additional edge cases
 
 @test "validate_host rejects control character" {
