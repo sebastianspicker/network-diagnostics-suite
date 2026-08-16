@@ -17,6 +17,21 @@ BeforeAll {
 
 Describe 'Network Lantern throughput helpers' {
 
+  Context 'Atomic JSON reporting' {
+    It 'does not create or replace report files under WhatIf' {
+      InModuleScope 'NetworkLantern.Throughput' {
+        $reportPath = Join-Path $TestDrive 'summary.json'
+        Set-Content -LiteralPath $reportPath -Value '{"existing":true}' -Encoding UTF8 -NoNewline
+        $before = Get-Content -LiteralPath $reportPath -Raw
+
+        Set-Iperf3JsonFileAtomic -Path $reportPath -InputObject @{ replacement = $true } -WhatIf 6>$null
+
+        (Get-Content -LiteralPath $reportPath -Raw) | Should -Be $before
+        @(Get-ChildItem -LiteralPath $TestDrive -Filter '.summary.json.*.tmp').Count | Should -Be 0
+      }
+    }
+  }
+
   Context 'JSON extraction' {
     It 'extracts the JSON substring when surrounded by text' {
       InModuleScope 'NetworkLantern.Throughput' {

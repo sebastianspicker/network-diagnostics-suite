@@ -55,11 +55,15 @@ function Test-UjQosSpecMatchesPolicy {
 }
 
 function New-UjQosPolicyFromSpec {
-  [CmdletBinding()]
+  [CmdletBinding(SupportsShouldProcess = $true)]
   [OutputType([void])]
   param(
     [Parameter(Mandatory)][object]$Spec
   )
+
+  if (-not $PSCmdlet.ShouldProcess([string]$Spec.Name, 'Create NetQosPolicy from backup')) {
+    return
+  }
 
   if ($Spec.Type -eq 'Port') {
     New-NetQosPolicy -Name $Spec.Name -IPPortMatchCondition $Spec.Port -IPProtocolMatchCondition $Spec.Protocol -DSCPAction $Spec.Dscp -NetworkProfile All -ErrorAction Stop | Out-Null
@@ -126,13 +130,13 @@ function Restore-UjQosFromBackup {
         Remove-NetQosPolicy -Name $spec.Name -Confirm:$false -ErrorAction Stop | Out-Null
         $removedExisting = $true
       }
-      New-UjQosPolicyFromSpec -Spec $spec
+      New-UjQosPolicyFromSpec -Spec $spec -Confirm:$false
     } catch {
       $hadFailure = $true
       Write-Warning -Message ("Could not restore network priority rule '{0}': {1}" -f $spec.Name, $_.Exception.Message)
       if ($removedExisting) {
         try {
-          New-UjQosPolicyFromSpec -Spec (ConvertTo-UjQosBackupSpec -Item $existing)
+          New-UjQosPolicyFromSpec -Spec (ConvertTo-UjQosBackupSpec -Item $existing) -Confirm:$false
         } catch {
           Write-Warning -Message ("Could not recover original network priority rule '{0}': {1}" -f $spec.Name, $_.Exception.Message)
         }
@@ -168,4 +172,3 @@ function Restore-UjQosFromBackup {
 
   return Get-UjRestoreComponentResult -Status 'OK' -Message 'QoS policies restored.'
 }
-

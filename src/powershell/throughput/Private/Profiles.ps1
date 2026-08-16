@@ -295,7 +295,7 @@ function Remove-Iperf3Profile {
   .EXAMPLE
   Remove-Iperf3Profile -ProfileName 'lab'
   #>
-  [CmdletBinding()]
+  [CmdletBinding(SupportsShouldProcess = $true)]
   [OutputType([bool])]
   param(
     [Parameter(Mandatory)]
@@ -304,6 +304,9 @@ function Remove-Iperf3Profile {
     [switch]$StrictConfiguration
   )
   $path = Resolve-ProfilesFilePath -ProfilesFile $ProfilesFile
+  if (-not $PSCmdlet.ShouldProcess($path, "Remove iperf3 profile '$ProfileName'")) {
+    return $false
+  }
   $capturedName = $ProfileName
   [ref]$removedRef = $false
   $null = Invoke-LockedProfileOperation -ProfilesFile $path -StrictConfiguration:$StrictConfiguration -Operation {

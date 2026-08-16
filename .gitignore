@@ -96,13 +96,10 @@
 /.aider.tags.cache.v*/
 /.cursorrules
 /.windsurfrules
-/.codacy/.gitignore
-/.codacy/cli-config.yaml
-/.codacy/codacy.config.json
-/.codacy/codacy.yaml
-/.codacy/generated/
-/.codacy/logs/
-/.codacy/tools-configs/
+/.codacy/*
+!/.codacy/codacy.config.json
+!/.codacy/codacy.yaml
+!/.codacy/codacy.yml
 /progress.md
 
 # Nested local tooling state

@@ -1,7 +1,7 @@
 # Report and summary helpers (private to NetworkLantern.Throughput)
 
 function Set-Iperf3JsonFileAtomic {
-  [CmdletBinding()]
+  [CmdletBinding(SupportsShouldProcess = $true)]
   [OutputType([void])]
   param(
     [Parameter(Mandatory)]
@@ -12,6 +12,9 @@ function Set-Iperf3JsonFileAtomic {
   $directory = Split-Path -Parent $Path
   $tempName = ".{0}.{1}.tmp" -f ([System.IO.Path]::GetFileName($Path)), ([guid]::NewGuid().ToString('N'))
   $tempPath = Join-Path -Path $directory -ChildPath $tempName
+  if (-not $PSCmdlet.ShouldProcess($Path, 'Write JSON file atomically')) {
+    return
+  }
   try {
     $InputObject | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $tempPath -Encoding UTF8 -NoNewline
     [System.IO.File]::Move($tempPath, $Path, $true)

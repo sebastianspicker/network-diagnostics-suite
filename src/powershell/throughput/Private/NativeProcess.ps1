@@ -152,7 +152,7 @@ function Get-Iperf3DescendantProcessSnapshot {
 }
 
 function Stop-Iperf3ProcessAfterTimeout {
-  [CmdletBinding()]
+  [CmdletBinding(SupportsShouldProcess = $true)]
   [OutputType([pscustomobject])]
   param(
     [Parameter(Mandatory)]
@@ -177,6 +177,19 @@ function Stop-Iperf3ProcessAfterTimeout {
       DescendantProcessIds     = [int[]]@($snapshot.ProcessIds)
       UnterminatedProcessIds   = [int[]]@()
       Error                    = 'Root exited before termination ownership could be established; orphaned or reparented descendants cannot be ruled out.'
+    }
+  }
+  if (-not $PSCmdlet.ShouldProcess("process $processId", 'Terminate process tree')) {
+    foreach ($descendant in $snapshot.Processes) { $descendant.Dispose() }
+    return [pscustomobject]@{
+      TerminationSucceeded     = $false
+      RootExited               = [bool]$Process.HasExited
+      TreeTerminationVerified  = $false
+      TerminationScope         = if ($snapshot.Succeeded) { 'TrackedProcessTree' } else { 'RootOnly' }
+      ProcessId                = $processId
+      DescendantProcessIds     = [int[]]@($snapshot.ProcessIds)
+      UnterminatedProcessIds   = [int[]]@($trackedProcesses | ForEach-Object { [int]$_.Id })
+      Error                    = 'Termination skipped by ShouldProcess.'
     }
   }
   try {

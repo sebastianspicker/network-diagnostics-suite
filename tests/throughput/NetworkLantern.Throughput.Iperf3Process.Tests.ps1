@@ -155,6 +155,34 @@ Describe 'Network Lantern throughput helpers' {
       }
     }
 
+    It 'does not kill a timed-out process under WhatIf' {
+      InModuleScope 'NetworkLantern.Throughput' {
+        $script:killCalls = 0
+        $process = [pscustomobject]@{ Id = 4243; HasExited = $false }
+        $process | Add-Member -MemberType ScriptMethod -Name Kill -Value {
+          param([bool]$entireProcessTree)
+          $null = $entireProcessTree
+          $script:killCalls++
+        }
+        Mock -CommandName Get-Iperf3DescendantProcessSnapshot {
+          [pscustomobject]@{
+            Succeeded = $true
+            Processes = @()
+            ProcessIds = [int[]]@()
+            Error = $null
+          }
+        }
+
+        $result = Stop-Iperf3ProcessAfterTimeout -Process $process -GracePeriodMs 10 -WhatIf 6>$null
+
+        $script:killCalls | Should -Be 0
+        $result.TerminationSucceeded | Should -BeFalse
+        $result.ProcessId | Should -Be 4243
+        $result.UnterminatedProcessIds | Should -Contain 4243
+        $result.Error | Should -Be 'Termination skipped by ShouldProcess.'
+      }
+    }
+
     It 'does not claim tree cleanup when the root already exited before ownership was established' {
       InModuleScope 'NetworkLantern.Throughput' {
         $process = [pscustomobject]@{ Id = 424242; HasExited = $true }

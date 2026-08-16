@@ -130,6 +130,22 @@ Describe 'Windows network tuning module' {
         $result | Should -BeFalse
       }
 
+      It 'New-UjQosPolicyFromSpec does not create a QoS policy under WhatIf' {
+        $spec = [pscustomobject]@{
+          Name = 'NETWORK_LANTERN_QOS_PORT_5201'
+          Type = 'Port'
+          Port = 5201
+          Protocol = 'UDP'
+          Dscp = 46
+        }
+        function New-NetQosPolicy {}
+        Mock -CommandName New-NetQosPolicy {}
+
+        New-UjQosPolicyFromSpec -Spec $spec -WhatIf 6>$null
+
+        Assert-MockCalled -CommandName New-NetQosPolicy -Times 0 -Exactly
+      }
+
       It 'Set-UjPowerPlan returns false when powercfg cannot switch plans' {
         function powercfg {
           $global:LASTEXITCODE = 1

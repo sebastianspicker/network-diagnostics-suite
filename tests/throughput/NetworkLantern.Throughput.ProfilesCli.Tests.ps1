@@ -43,6 +43,21 @@ Describe 'Network Lantern throughput helpers' {
       }
     }
 
+    It 'does not change a profile store under WhatIf' {
+      InModuleScope 'NetworkLantern.Throughput' {
+        $profilesFile = Join-Path $TestDrive 'profiles-remove-whatif.json'
+        $null = Save-Iperf3Profile -ProfileName 'keep' -ProfilesFile $profilesFile -Parameters @{ Target = 'example.local' }
+        $before = Get-Content -LiteralPath $profilesFile -Raw
+
+        $removed = Remove-Iperf3Profile -ProfileName 'keep' -ProfilesFile $profilesFile -WhatIf 6>$null
+
+        $removed | Should -BeFalse
+        (Get-Content -LiteralPath $profilesFile -Raw) | Should -Be $before
+        (Get-Iperf3ProfileNames -ProfilesFile $profilesFile) | Should -Contain 'keep'
+        @(Get-ChildItem -LiteralPath $TestDrive -Filter '.profiles-remove-whatif.json.*.tmp').Count | Should -Be 0
+      }
+    }
+
     It 'creates a backup when profiles file is corrupt in non-strict mode' {
       InModuleScope 'NetworkLantern.Throughput' {
         $profilesFile = Join-Path $TestDrive 'profiles-corrupt.json'
