@@ -24,17 +24,11 @@ if (-not (Get-Module -ListAvailable -Name Pester | Where-Object { $_.Version -eq
 Get-Module -Name Pester | Remove-Module -Force -ErrorAction SilentlyContinue
 Import-Module Pester -RequiredVersion $requiredPesterVersion -Force -ErrorAction Stop
 
-$testResultsDir = Join-Path $repoRoot 'artifacts'
-New-Item -ItemType Directory -Path $testResultsDir -Force | Out-Null
-
 $config = [PesterConfiguration]::Default
 $config.Run.Path = $testsDir
 $config.Run.Exit = $false
 $config.Run.PassThru = $true
 $config.Output.Verbosity = 'Detailed'
-$config.TestResult.Enabled = $true
-$config.TestResult.OutputFormat = 'NUnitXml'
-$config.TestResult.OutputPath = Join-Path $testResultsDir 'testResults.xml'
 $config.Should.ErrorAction = 'Stop'
 
 $config.Filter.FullName = "*$Filter*"

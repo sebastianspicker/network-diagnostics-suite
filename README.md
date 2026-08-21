@@ -56,8 +56,8 @@ Current limitations:
   these switches, so its live throughput workflows currently require Windows.
 - A default full throughput matrix can plan 1,110 tests when `iperf3` supports
   bidirectional mode. Use `-WhatIf` before a live matrix run.
-- The throughput GUI has automated helper and cancellation tests, but no
-  automated visual or end-to-end live-run coverage.
+- The throughput cancellation protocol has direct contract coverage; GUI
+  automation is not retained.
 - `apps/windows-tuning/Invoke-NetworkPathTuning-GUI.ps1` is a text-only
   compatibility entrypoint. It does not open a GUI.
 - Real Windows `Apply`, `Backup`, and `Restore` operations change system state.

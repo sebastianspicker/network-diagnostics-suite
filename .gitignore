@@ -1,5 +1,4 @@
 # Pester (Invoke-Pester -CI)
-/testResults.xml
 /PesterResults*.xml
 /junit.xml
 /test-results/
@@ -148,3 +147,16 @@ Desktop.ini
 /.cursor/
 /.codex/
 /.mcp.json
+
+# Generated test and coverage output (local only)
+/coverage/
+/htmlcov/
+/.coverage
+/.coverage.*
+/.pytest_cache/
+/test-results/
+/playwright-report/
+/blob-report/
+/coverage.xml
+/junit.xml
+/junit-*.xml

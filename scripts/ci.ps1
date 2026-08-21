@@ -130,19 +130,11 @@ if ($scriptAnalyzerResults) {
   throw "PSScriptAnalyzer found $(@($scriptAnalyzerResults).Count) issue(s)."
 }
 
-$artifactsDir = Join-Path -Path $repoRoot -ChildPath 'artifacts'
-if (-not (Test-Path -LiteralPath $artifactsDir)) {
-  New-Item -Path $artifactsDir -ItemType Directory -Force | Out-Null
-}
-
 $pesterConfiguration = [PesterConfiguration]::Default
 $pesterConfiguration.Run.Path = Join-Path $repoRoot 'tests'
 $pesterConfiguration.Run.Exit = $false
 $pesterConfiguration.Run.PassThru = $true
 $pesterConfiguration.Output.Verbosity = 'Detailed'
-$pesterConfiguration.TestResult.Enabled = $true
-$pesterConfiguration.TestResult.OutputFormat = 'NUnitXml'
-$pesterConfiguration.TestResult.OutputPath = Join-Path $artifactsDir 'testResults.xml'
 $pesterConfiguration.Should.ErrorAction = 'Stop'
 
 $pesterResult = Invoke-Pester -Configuration $pesterConfiguration

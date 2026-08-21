@@ -44,8 +44,7 @@ This command runs, in order:
 4. `scripts/ci.ps1 -NoInstall`
 
 The final PowerShell phase runs the project identity check, PSScriptAnalyzer,
-and all Pester tests. Pester writes NUnit XML to
-`artifacts/testResults.xml`.
+and the compact Pester contract suite without creating test artifacts.
 
 The complete gate does not install system packages. By default it also refuses
 to install missing PowerShell modules. In an environment where user-scope
