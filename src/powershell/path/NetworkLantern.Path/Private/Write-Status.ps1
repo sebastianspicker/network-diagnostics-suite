@@ -12,7 +12,7 @@ function Write-Status {
     [Parameter(Mandatory)][string]$Message
   )
 
-  if ($Quiet -and $Level -notin @('WARN', 'FAIL', 'ERROR', 'SUMMARY')) {
+  if ($script:PathQuiet -and $Level -notin @('WARN', 'FAIL', 'ERROR', 'SUMMARY')) {
     return
   }
 

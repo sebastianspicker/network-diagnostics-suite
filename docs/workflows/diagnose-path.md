@@ -42,8 +42,9 @@ Each run creates:
 
 Result records include `PingStatus`, `TracertStatus`, `PathpingStatus`,
 `Tcp443Status`, `PortsStatus`, and `OverallStatus`. `PathpingStatus` is
-`Skipped` when `-SkipPathping` is supplied. `PortsStatus` is currently
-`Skipped` because the public entrypoint has no optional service-port targets.
+`Skipped` when `-SkipPathping` is supplied. `Ports` is always an empty array
+and `PortsStatus` is `Skipped`; these retained fields preserve the result
+schema for existing consumers.
 
 The process exits 1 if any planned run has `OverallStatus` equal to `Fail`.
 Validation and execution errors also return a nonzero status. If execution is

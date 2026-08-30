@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 # validation.sh - input validation functions
 
-# shellcheck disable=SC1091
-source "${BASH_SOURCE[0]%/*}/common.sh" 2>/dev/null || true
-
 # Split a comma-separated string into the PARSED_CSV_ITEMS array.
 # Args:
 #   $1 - CSV string

@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
 # config.sh - host configuration loading
 
-# shellcheck disable=SC1091
-source "${BASH_SOURCE[0]%/*}/common.sh" 2>/dev/null || true
-# shellcheck disable=SC1091
-source "${BASH_SOURCE[0]%/*}/validation.sh" 2>/dev/null || true
-
 # Return the absolute path to the default hosts.conf file.
 # Output/Returns:
 #   Prints "<repo_root>/config/hosts.conf" to stdout

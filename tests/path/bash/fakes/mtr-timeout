@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+trap 'printf "%s" TERM >"$MTR_SIGNAL_FILE"; trap "" TERM' TERM
+while :; do
+  sleep 0.1
+done

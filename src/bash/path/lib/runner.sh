@@ -1,13 +1,6 @@
 #!/usr/bin/env bash
 # runner.sh - single test run execution
 
-# shellcheck disable=SC1091
-source "${BASH_SOURCE[0]%/*}/common.sh" 2>/dev/null || true
-# shellcheck disable=SC1091
-source "${BASH_SOURCE[0]%/*}/mtr_args.sh" 2>/dev/null || true
-# shellcheck disable=SC1091
-source "${BASH_SOURCE[0]%/*}/logging.sh" 2>/dev/null || true
-
 # Emit a JSON object marking a failed test run (appended to the JSON log).
 # Args:
 #   $1 - round name
@@ -55,20 +48,20 @@ _capture_mtr_with_deadline() {
   shift
   local mtr_pid
   local timed_out=0
-  local deadline
+  local remaining_ticks=$((MTR_TIMEOUT_SECONDS * 10))
 
   mtr "$@" -- "$host" >"$CURRENT_TMP" 2>>"$TABLE_LOG" &
   mtr_pid=$!
   CURRENT_MTR_PID=$mtr_pid
 
-  deadline=$((SECONDS + MTR_TIMEOUT_SECONDS))
   while kill -0 "$mtr_pid" 2>/dev/null; do
-    if ((SECONDS >= deadline)); then
+    if ((remaining_ticks <= 0)); then
       timed_out=1
       _terminate_mtr_at_deadline "$mtr_pid"
       break
     fi
     sleep 0.1
+    ((remaining_ticks--)) || true
   done
 
   local mtr_status=0

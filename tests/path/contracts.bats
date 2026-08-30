@@ -4,7 +4,7 @@ setup() {
   PATH_APP="$BATS_TEST_DIRNAME/../../apps/path/test-network-path.sh"
 }
 
-@test "path dry-run is bounded and leaves no output files" {
+@test "path dry-run preserves the public CLI adapter" {
   run bash "$PATH_APP" --types ICMP4 --rounds Standard --hosts4 localhost --dry-run --no-summary
   [ "$status" -eq 0 ]
   [[ "$output" == *"Planned runs: 1"* ]]

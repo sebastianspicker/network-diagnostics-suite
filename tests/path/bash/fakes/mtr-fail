@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+printf '%s\n' '{"error":"fixture failure"}'
+exit 7

@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+printf '%s\n' '{"report":{"dst_name":"fixture.example","dst_addr":"192.0.2.10","hubs":[]}}'

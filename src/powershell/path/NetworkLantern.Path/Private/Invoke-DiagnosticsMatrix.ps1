@@ -4,14 +4,11 @@ function Invoke-DiagnosticsMatrix {
     Iterate over every plan item, run diagnostics, collect results, and log progress.
   .PARAMETER Plan
     The full diagnostic plan (list of plan items).
-  .PARAMETER PortTargets
-    Array of port probe definitions.
   .PARAMETER Results
     Mutable list that receives each completed diagnostic result object.
   #>
   param(
     [Parameter(Mandatory)][System.Collections.Generic.List[object]]$Plan,
-    [Parameter(Mandatory)][AllowEmptyCollection()][array]$PortTargets,
     [Parameter(Mandatory)][AllowEmptyCollection()][System.Collections.Generic.List[object]]$Results,
     [Parameter(Mandatory)][object]$Settings
   )
@@ -23,7 +20,7 @@ function Invoke-DiagnosticsMatrix {
     $index++
     Write-Status -Level INFO -Message "RUN [$index/$total] round=$($item.RoundName) protocol=$($item.Protocol) host=$($item.Host)"
 
-    $obj = Invoke-HostDiagnostics -PlanItem $item -PortTargets $PortTargets -Settings $Settings
+    $obj = Invoke-HostDiagnostics -PlanItem $item -Settings $Settings
     $Results.Add($obj)
 
     if ($obj.OverallStatus -eq 'OK') {

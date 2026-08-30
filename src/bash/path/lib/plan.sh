@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 # plan.sh - test run plan computation
 
-# shellcheck disable=SC1091
-source "${BASH_SOURCE[0]%/*}/mtr_args.sh" 2>/dev/null || true
-
 # Build the full test matrix from ROUND_ORDER x TEST_ORDER x hosts.
 # Side effects:
 #   Sets global array PLAN_ENTRIES (each element: "round|type|host")

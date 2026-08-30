@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 # mtr_args.sh - MTR argument construction
 
-# shellcheck disable=SC1091
-source "${BASH_SOURCE[0]%/*}/common.sh" 2>/dev/null || true
-
 # Populate extra_args array with MTR flags for the given round name.
 # Args:
 #   $1 - round name (Standard, MTU1400, TOS_CS5, TOS_AF11, TTL10, etc.)

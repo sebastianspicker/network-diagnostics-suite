@@ -28,9 +28,10 @@ shellcheck -x \
   "$REPO_ROOT/scripts/ci-local.sh" \
   "$REPO_ROOT/scripts/install-test-deps.sh" \
   "$REPO_ROOT/scripts/run-workflow.sh" \
+  "$REPO_ROOT"/src/bash/path/*.sh \
   "$REPO_ROOT"/src/bash/path/lib/*.sh
 
-bats "$REPO_ROOT/tests/path"
+bats "$REPO_ROOT/tests/path/contracts.bats" "$REPO_ROOT/tests/path/bash"
 
 pwsh -NoProfile -NonInteractive -File "$REPO_ROOT/scripts/Invoke-SecretScan.ps1"
 ci_args=(-NoInstall)
