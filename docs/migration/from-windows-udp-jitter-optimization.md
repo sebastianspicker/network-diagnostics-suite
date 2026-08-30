@@ -6,7 +6,7 @@ Windows tuning is now the optional `NetworkLantern.WindowsTuning` module.
 | --- | --- |
 | `WindowsUdpJitterOptimization` | `NetworkLantern.WindowsTuning` |
 | `Optimize-NetworkPath.ps1` | `apps/windows-tuning/Invoke-NetworkPathTuning.ps1` |
-| `Optimize-NetworkPath-GUI.ps1` | `apps/windows-tuning/Invoke-NetworkPathTuning-GUI.ps1`, a CLI guidance stub |
+| `Optimize-NetworkPath-GUI.ps1` | No GUI replacement; use `apps/windows-tuning/Invoke-NetworkPathTuning.ps1` |
 | `Get-NdsDefaultBackupFolder` | `Get-NetworkLanternDefaultBackupFolder` |
 | `Test-UjIsAdministrator` | `Test-NetworkTuningAdministrator` |
 

@@ -1,25 +1,25 @@
-function Get-UjBackupArtifactFileMap {
+function Get-NetworkTuningBackupArtifactFileMap {
   [CmdletBinding()]
   [OutputType([hashtable])]
   param()
 
   return @{
-    SystemProfile = @($script:UjBackupFileSystemProfile)
-    AfdParameters = @($script:UjBackupFileAfdParameters)
-    QosPolicies  = @($script:UjBackupFileQosOurs)
-    NicAdvanced  = @($script:UjBackupFileNicAdvanced)
-    NicRsc        = @($script:UjBackupFileRsc)
-    PowerPlan     = @($script:UjBackupFilePowerplan)
+    SystemProfile = @($script:NetworkTuningBackupFileSystemProfile)
+    AfdParameters = @($script:NetworkTuningBackupFileAfdParameters)
+    QosPolicies  = @($script:NetworkTuningBackupFileQosOurs)
+    NicAdvanced  = @($script:NetworkTuningBackupFileNicAdvanced)
+    NicRsc        = @($script:NetworkTuningBackupFileRsc)
+    PowerPlan     = @($script:NetworkTuningBackupFilePowerplan)
   }
 }
 
-function Get-UjKnownBackupArtifactNames {
+function Get-NetworkTuningKnownBackupArtifactNames {
   [CmdletBinding()]
   [OutputType([string[]])]
   param()
 
   $names = [System.Collections.Generic.List[string]]::new()
-  foreach ($entry in (Get-UjBackupArtifactFileMap).GetEnumerator()) {
+  foreach ($entry in (Get-NetworkTuningBackupArtifactFileMap).GetEnumerator()) {
     foreach ($name in @($entry.Value)) {
       if (-not [string]::IsNullOrWhiteSpace($name) -and -not $names.Contains($name)) {
         $names.Add($name) | Out-Null
@@ -29,7 +29,43 @@ function Get-UjKnownBackupArtifactNames {
   return $names.ToArray()
 }
 
-function Test-UjSafeBackupArtifactName {
+function Get-NetworkTuningBackupArtifactMaximumBytes {
+  [CmdletBinding()]
+  [OutputType([long])]
+  param([Parameter(Mandatory)][string]$FileName)
+
+  switch ($FileName) {
+    $script:NetworkTuningBackupFileSystemProfile { return [long]$script:NetworkTuningMaxRegistryBackupBytes }
+    $script:NetworkTuningBackupFileAfdParameters { return [long]$script:NetworkTuningMaxRegistryBackupBytes }
+    $script:NetworkTuningBackupFileQosOurs { return [long]$script:NetworkTuningMaxQosBackupBytes }
+    $script:NetworkTuningBackupFileNicAdvanced { return [long]$script:NetworkTuningMaxCsvBackupBytes }
+    $script:NetworkTuningBackupFileRsc { return [long]$script:NetworkTuningMaxCsvBackupBytes }
+    $script:NetworkTuningBackupFilePowerplan { return 64L }
+    $script:NetworkTuningBackupFileManifest { return [long]$script:NetworkTuningMaxManifestBytes }
+    default { throw "No size limit is defined for backup artifact: $FileName" }
+  }
+}
+
+function Get-NetworkTuningBoundedFileSha256 {
+  [CmdletBinding()]
+  [OutputType([string])]
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][long]$MaximumBytes
+  )
+
+  $hashAlgorithm = $null
+  try {
+    $hashAlgorithm = [System.Security.Cryptography.IncrementalHash]::CreateHash([System.Security.Cryptography.HashAlgorithmName]::SHA256)
+    Invoke-NetworkTuningBoundedFileStream -Path $Path -MaximumBytes $MaximumBytes -OnChunk { param($buffer, $count) $hashAlgorithm.AppendData($buffer, 0, $count) } | Out-Null
+    $hash = $hashAlgorithm.GetHashAndReset()
+    return [System.Convert]::ToHexString($hash)
+  } finally {
+    if ($null -ne $hashAlgorithm) { $hashAlgorithm.Dispose() }
+  }
+}
+
+function Test-NetworkTuningSafeBackupArtifactName {
   [CmdletBinding()]
   [OutputType([bool])]
   param(
@@ -42,7 +78,7 @@ function Test-UjSafeBackupArtifactName {
   return $true
 }
 
-function Get-UjExpectedBackupArtifactNames {
+function Get-NetworkTuningExpectedBackupArtifactNames {
   [CmdletBinding()]
   [OutputType([string[]])]
   param(
@@ -50,7 +86,7 @@ function Get-UjExpectedBackupArtifactNames {
   )
 
   $expected = [System.Collections.Generic.List[string]]::new()
-  $fileMap = Get-UjBackupArtifactFileMap
+  $fileMap = Get-NetworkTuningBackupArtifactFileMap
   $components = if ($Manifest.ContainsKey('Components') -and $Manifest['Components'] -is [System.Collections.IDictionary]) {
     $Manifest['Components']
   } else {
@@ -74,7 +110,7 @@ function Get-UjExpectedBackupArtifactNames {
   return $expected.ToArray()
 }
 
-function Get-UjBackupArtifactDigests {
+function Get-NetworkTuningBackupArtifactDigests {
   [CmdletBinding()]
   [OutputType([hashtable])]
   param(
@@ -83,16 +119,16 @@ function Get-UjBackupArtifactDigests {
   )
 
   $digests = @{}
-  foreach ($fileName in (Get-UjExpectedBackupArtifactNames -Manifest $Manifest)) {
+  foreach ($fileName in (Get-NetworkTuningExpectedBackupArtifactNames -Manifest $Manifest)) {
     $artifactPath = Join-Path -Path $BackupFolder -ChildPath $fileName
     if (Test-Path -LiteralPath $artifactPath -PathType Leaf) {
-      $digests[$fileName] = (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash
+      $digests[$fileName] = Get-NetworkTuningBoundedFileSha256 -Path $artifactPath -MaximumBytes (Get-NetworkTuningBackupArtifactMaximumBytes -FileName $fileName)
     }
   }
   return $digests
 }
 
-function Test-UjBackupArtifactDigests {
+function Test-NetworkTuningBackupArtifactDigests {
   [CmdletBinding()]
   [OutputType([pscustomobject])]
   param(
@@ -104,8 +140,8 @@ function Test-UjBackupArtifactDigests {
     return [pscustomobject]@{ IsValid = $false; Message = 'Backup manifest is missing artifact digests.' }
   }
 
-  $expectedNames = @(Get-UjExpectedBackupArtifactNames -Manifest $Manifest)
-  $knownNames = @(Get-UjKnownBackupArtifactNames)
+  $expectedNames = @(Get-NetworkTuningExpectedBackupArtifactNames -Manifest $Manifest)
+  $knownNames = @(Get-NetworkTuningKnownBackupArtifactNames)
   $digests = $Manifest['ArtifactDigests']
 
   foreach ($artifactName in $expectedNames) {
@@ -120,7 +156,7 @@ function Test-UjBackupArtifactDigests {
 
   foreach ($name in $digests.Keys) {
     $artifactName = [string]$name
-    if (-not (Test-UjSafeBackupArtifactName -Name $artifactName)) {
+    if (-not (Test-NetworkTuningSafeBackupArtifactName -Name $artifactName)) {
       return [pscustomobject]@{ IsValid = $false; Message = "Backup manifest contains an unsafe artifact name: $artifactName" }
     }
     if ($artifactName -notin $knownNames) {
@@ -140,7 +176,11 @@ function Test-UjBackupArtifactDigests {
       return [pscustomobject]@{ IsValid = $false; Message = "Backup artifact listed in manifest is missing: $artifactName" }
     }
 
-    $actualHash = (Get-FileHash -LiteralPath $artifactPath -Algorithm SHA256).Hash
+    try {
+      $actualHash = Get-NetworkTuningBoundedFileSha256 -Path $artifactPath -MaximumBytes (Get-NetworkTuningBackupArtifactMaximumBytes -FileName $artifactName)
+    } catch {
+      return [pscustomobject]@{ IsValid = $false; Message = "Backup artifact could not be read safely: $artifactName" }
+    }
     if ($actualHash -cne $expectedHash) {
       return [pscustomobject]@{ IsValid = $false; Message = "Backup artifact digest mismatch: $artifactName" }
     }
@@ -159,4 +199,3 @@ function Test-UjBackupArtifactDigests {
 
   return [pscustomobject]@{ IsValid = $true; Message = '' }
 }
-

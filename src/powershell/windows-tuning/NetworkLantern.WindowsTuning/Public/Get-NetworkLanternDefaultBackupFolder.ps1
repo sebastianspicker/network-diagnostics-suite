@@ -9,5 +9,5 @@ function Get-NetworkLanternDefaultBackupFolder {
   [OutputType([string])]
   param()
 
-  return $script:UjDefaultBackupFolder
+  return $script:NetworkTuningDefaultBackupFolder
 }

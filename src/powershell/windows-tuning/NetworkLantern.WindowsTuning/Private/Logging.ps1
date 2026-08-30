@@ -1,4 +1,4 @@
-function Write-UjInformation {
+function Write-NetworkTuningInformation {
   [CmdletBinding()]
   [OutputType([void])]
   param(

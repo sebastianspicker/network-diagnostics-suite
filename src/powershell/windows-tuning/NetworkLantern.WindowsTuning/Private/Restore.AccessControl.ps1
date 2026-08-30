@@ -1,4 +1,4 @@
-function Get-UjTrustedStagingSidValue {
+function Get-NetworkTuningTrustedStagingSidValue {
   [CmdletBinding()]
   [OutputType([string[]])]
   param()
@@ -10,14 +10,14 @@ function Get-UjTrustedStagingSidValue {
   )
 }
 
-function Test-UjWindowsStagingAncestorChain {
+function Test-NetworkTuningWindowsStagingAncestorChain {
   [CmdletBinding()]
   [OutputType([pscustomobject])]
   param(
     [Parameter(Mandatory)][string]$Path
   )
 
-  $trustedSids = @(Get-UjTrustedStagingSidValue)
+  $trustedSids = @(Get-NetworkTuningTrustedStagingSidValue)
   $takeoverRights = [System.Security.AccessControl.FileSystemRights]::Delete -bor
     [System.Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor
     [System.Security.AccessControl.FileSystemRights]::ChangePermissions -bor
@@ -62,14 +62,14 @@ function Test-UjWindowsStagingAncestorChain {
   return [pscustomobject]@{ IsTrusted = $true; Message = '' }
 }
 
-function Test-UjWindowsAdminOnlyPath {
+function Test-NetworkTuningWindowsAdminOnlyPath {
   [CmdletBinding()]
   [OutputType([pscustomobject])]
   param(
     [Parameter(Mandatory)][string]$Path
   )
 
-  $ancestorCheck = Test-UjWindowsStagingAncestorChain -Path $Path
+  $ancestorCheck = Test-NetworkTuningWindowsStagingAncestorChain -Path $Path
   if (-not $ancestorCheck.IsTrusted) { return $ancestorCheck }
 
   $requiredSids = @('S-1-5-18', 'S-1-5-32-544')
@@ -83,7 +83,7 @@ function Test-UjWindowsAdminOnlyPath {
 
     $ownerSid = $acl.GetOwner([System.Security.Principal.SecurityIdentifier]).Value
     $groupSid = $acl.GetGroup([System.Security.Principal.SecurityIdentifier]).Value
-    $trustedSids = @(Get-UjTrustedStagingSidValue)
+    $trustedSids = @(Get-NetworkTuningTrustedStagingSidValue)
     if ($ownerSid -notin $trustedSids -or $groupSid -notin $trustedSids) {
       return [pscustomobject]@{ IsTrusted = $false; Message = "Restore staging path owner or group is not administrative: $Path" }
     }
@@ -132,7 +132,7 @@ function Test-UjWindowsAdminOnlyPath {
   return [pscustomobject]@{ IsTrusted = $true; Message = '' }
 }
 
-function Get-UjAdminOnlyDirectorySecurity {
+function Get-NetworkTuningAdminOnlyDirectorySecurity {
   [CmdletBinding()]
   [OutputType([System.Security.AccessControl.DirectorySecurity])]
   param()
@@ -157,7 +157,7 @@ function Get-UjAdminOnlyDirectorySecurity {
   return $acl
 }
 
-function Initialize-UjAdminOnlyDirectory {
+function Initialize-NetworkTuningAdminOnlyDirectory {
   [CmdletBinding(SupportsShouldProcess = $true)]
   [OutputType([string])]
   param(
@@ -169,15 +169,15 @@ function Initialize-UjAdminOnlyDirectory {
   }
 
   $directoryInfo = [System.IO.DirectoryInfo]::new($Path)
-  $directorySecurity = Get-UjAdminOnlyDirectorySecurity
+  $directorySecurity = Get-NetworkTuningAdminOnlyDirectorySecurity
   [System.IO.FileSystemAclExtensions]::Create($directoryInfo, $directorySecurity)
 
-  $pathCheck = Test-UjWindowsAdminOnlyPath -Path $Path
+  $pathCheck = Test-NetworkTuningWindowsAdminOnlyPath -Path $Path
   if (-not $pathCheck.IsTrusted) { throw $pathCheck.Message }
   return (Get-Item -LiteralPath $Path -Force -ErrorAction Stop).FullName
 }
 
-function Protect-UjAdminOnlyFile {
+function Protect-NetworkTuningAdminOnlyFile {
   [CmdletBinding(SupportsShouldProcess = $true)]
   [OutputType([void])]
   param(
@@ -208,7 +208,7 @@ function Protect-UjAdminOnlyFile {
   Set-Acl -LiteralPath $Path -AclObject $acl -ErrorAction Stop
 }
 
-function Get-UjWindowsRestoreStagingRoot {
+function Get-NetworkTuningWindowsRestoreStagingRoot {
   [CmdletBinding()]
   [OutputType([string])]
   param()
@@ -221,13 +221,13 @@ function Get-UjWindowsRestoreStagingRoot {
     throw 'Windows restore staging requires a local common application-data directory, not a UNC or device path.'
   }
 
-  $baseCheck = Test-UjWindowsStagingAncestorChain -Path $commonData
+  $baseCheck = Test-NetworkTuningWindowsStagingAncestorChain -Path $commonData
   if (-not $baseCheck.IsTrusted) { throw $baseCheck.Message }
 
   $currentPath = $commonData
   foreach ($childName in @('NetworkLantern-Privileged', 'RestoreStaging')) {
     $currentPath = Join-Path -Path $currentPath -ChildPath $childName
-    $currentPath = Initialize-UjAdminOnlyDirectory -Path $currentPath -Confirm:$false
+    $currentPath = Initialize-NetworkTuningAdminOnlyDirectory -Path $currentPath -Confirm:$false
   }
 
   return $currentPath

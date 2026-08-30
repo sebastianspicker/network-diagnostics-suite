@@ -21,11 +21,11 @@ $privateLoadOrder = @(
   'Restore.AccessControl.ps1',
   'Restore.Staging.ps1',
   'Restore.Qos.ps1',
+  'Restore.Validation.ps1',
   'Restore.Components.ps1',
   'Actions.Backup.ps1',
   'Actions.Restore.ps1',
-  'Actions.Apply.ps1',
-  'Actions.Reset.ps1'
+  'Actions.Apply.ps1'
 )
 foreach ($fileName in $privateLoadOrder) {
   $filePath = Join-Path -Path $privateDir -ChildPath $fileName
@@ -37,6 +37,7 @@ foreach ($fileName in $privateLoadOrder) {
 
 $publicDir = Join-Path -Path $PSScriptRoot -ChildPath 'Public'
 $publicLoadOrder = @(
+  'Test-NetworkTuningAdministrator.ps1',
   'Get-NetworkLanternDefaultBackupFolder.ps1',
   'Invoke-NetworkPathTuning.ps1'
 )

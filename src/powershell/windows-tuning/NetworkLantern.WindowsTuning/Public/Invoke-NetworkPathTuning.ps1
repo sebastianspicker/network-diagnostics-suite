@@ -33,7 +33,7 @@ function Invoke-NetworkPathTuning {
     [ValidateSet('None', 'HighPerformance')]
     [string]$PowerPlan = 'None',
 
-    [string]$BackupFolder = $script:UjDefaultBackupFolder,
+    [string]$BackupFolder = $script:NetworkTuningDefaultBackupFolder,
 
     [switch]$AllowUnsafeBackupFolder,
 
@@ -48,28 +48,35 @@ function Invoke-NetworkPathTuning {
   }
 
   if (-not $PSBoundParameters.ContainsKey('BackupFolder') -and $Action -eq 'Restore') {
-    $newManifestPath = Join-Path -Path $script:UjDefaultBackupFolder -ChildPath $script:UjBackupFileManifest
-    $legacyManifestPath = Join-Path -Path $script:UjLegacyDefaultBackupFolder -ChildPath $script:UjBackupFileManifest
+    $newManifestPath = Join-Path -Path $script:NetworkTuningDefaultBackupFolder -ChildPath $script:NetworkTuningBackupFileManifest
+    $legacyManifestPath = Join-Path -Path $script:NetworkTuningLegacyDefaultBackupFolder -ChildPath $script:NetworkTuningBackupFileManifest
     if (-not (Test-Path -LiteralPath $newManifestPath -PathType Leaf) -and
         (Test-Path -LiteralPath $legacyManifestPath -PathType Leaf)) {
-      $BackupFolder = $script:UjLegacyDefaultBackupFolder
+      $BackupFolder = $script:NetworkTuningLegacyDefaultBackupFolder
     }
-  }
-
-  if (-not $DryRun -and $Action -ne 'Verify') {
-    Assert-UjAdministrator
   }
 
   if ($Action -in @('Apply', 'Backup', 'Restore') -and [string]::IsNullOrWhiteSpace($BackupFolder)) {
     throw 'BackupFolder must not be empty.'
   }
 
-  if ($Action -in @('Apply', 'Backup', 'Restore') -and -not $AllowUnsafeBackupFolder -and (Test-UjUnsafeBackupFolder -Path $BackupFolder)) {
+  if ($Action -in @('Apply', 'Backup', 'Restore') -and -not $AllowUnsafeBackupFolder -and (Test-NetworkTuningUnsafeBackupFolder -Path $BackupFolder)) {
     throw 'BackupFolder appears unsafe because it points to a sensitive system directory. Use -AllowUnsafeBackupFolder to override intentionally.'
   }
 
-  if (-not $DryRun -and $Action -in @('Apply', 'Backup', 'Restore')) {
-    New-UjDirectory -Path $BackupFolder | Out-Null
+  if (-not $DryRun -and $Action -in @('Apply', 'Backup')) {
+    $backupPathTrust = Test-NetworkTuningBackupWritePathTrust -BackupFolder $BackupFolder
+    if (-not $backupPathTrust.IsTrusted) {
+      throw "BackupFolder is not trusted for elevated writes: $($backupPathTrust.Message)"
+    }
+  }
+
+  if (-not $DryRun -and $Action -ne 'Verify') {
+    Assert-NetworkTuningAdministrator
+  }
+
+  if (-not $DryRun -and $Action -in @('Apply', 'Backup')) {
+    New-NetworkTuningDirectory -Path $BackupFolder | Out-Null
   }
 
   $normalizedPorts = @($UdpPorts | Sort-Object -Unique)
@@ -79,12 +86,12 @@ function Invoke-NetworkPathTuning {
   $success = $true
 
   if ($Action -eq 'Backup') {
-    $backupResult = Backup-UjState -BackupFolder $BackupFolder -DryRun:$DryRun
-    $backupStatus = Resolve-UjRestoreStatus -Result $backupResult -DefaultIfNull 'OK'
+    $backupResult = Backup-NetworkTuningState -BackupFolder $BackupFolder -DryRun:$DryRun
+    $backupStatus = Resolve-NetworkTuningRestoreStatus -Result $backupResult -DefaultIfNull 'OK'
     $components['Backup'] = $backupStatus
     $success = $backupStatus -ne 'Warn'
   } elseif ($Action -eq 'Restore') {
-    $restoreStatus = Restore-UjState -BackupFolder $BackupFolder -DryRun:$DryRun
+    $restoreStatus = Restore-NetworkTuningState -BackupFolder $BackupFolder -DryRun:$DryRun
     foreach ($name in $restoreStatus.Keys) {
       $components[$name] = $restoreStatus[$name]
       if ($restoreStatus[$name] -eq 'Warn') {
@@ -103,7 +110,7 @@ function Invoke-NetworkPathTuning {
 
     try {
       if ($qosEnumerationAvailable) {
-        $managedPolicies = @(Get-UjManagedQosPolicy -ErrorOnFailure | Select-Object -ExpandProperty Name)
+        $managedPolicies = @(Get-NetworkTuningManagedQosPolicy -ErrorOnFailure | Select-Object -ExpandProperty Name)
       }
     } catch {
       $warnings.Add("Could not enumerate managed QoS policies: $($_.Exception.Message)") | Out-Null
@@ -113,7 +120,7 @@ function Invoke-NetworkPathTuning {
 
     $localQosEnabled = $null
     try {
-      $localQosEnabled = [string](Get-ItemProperty -Path $script:UjRegistryPathQos -Name 'Do not use NLA' -ErrorAction Stop).'Do not use NLA' -eq '1'
+      $localQosEnabled = [string](Get-ItemProperty -Path $script:NetworkTuningRegistryPathQos -Name 'Do not use NLA' -ErrorAction Stop).'Do not use NLA' -eq '1'
     } catch {
       $localQosEnabled = $null
     }
@@ -121,7 +128,7 @@ function Invoke-NetworkPathTuning {
     $missingPorts = @()
     foreach ($port in $normalizedPorts) {
       $expectedNames = @(
-        "$($script:UjQosPortPrefix)$port",
+        "$($script:NetworkTuningQosPortPrefix)$port",
         "NDS_QOS_PORT_$port"
       )
       if (@($expectedNames | Where-Object { $_ -in $managedPolicies }).Count -eq 0) {
@@ -164,8 +171,8 @@ function Invoke-NetworkPathTuning {
       Timestamp       = Get-Date
     }
   } else {
-    $backupResult = Backup-UjState -BackupFolder $BackupFolder -DryRun:$DryRun
-    $backupStatus = Resolve-UjRestoreStatus -Result $backupResult -DefaultIfNull 'OK'
+    $backupResult = Backup-NetworkTuningState -BackupFolder $BackupFolder -DryRun:$DryRun
+    $backupStatus = Resolve-NetworkTuningRestoreStatus -Result $backupResult -DefaultIfNull 'OK'
     $components['Backup'] = $backupStatus
     if ($backupStatus -eq 'Warn') {
       $warnings.Add('Backup completed with warnings: one or more components failed.') | Out-Null
@@ -176,7 +183,7 @@ function Invoke-NetworkPathTuning {
     # expected artifacts, digests, and path trust checks to pass before any
     # mutating tuning helper is reached. Dry-run has no mutation to protect.
     if (-not $DryRun) {
-      $backupVerification = Read-UjBackupManifest -BackupFolder $BackupFolder
+      $backupVerification = Read-NetworkTuningBackupManifest -BackupFolder $BackupFolder
       if ($backupStatus -ne 'OK' -or $backupVerification.Status -ne 'OK') {
         $verificationMessage = if ([string]::IsNullOrWhiteSpace($backupVerification.Message)) {
           'Backup verification did not complete successfully.'
@@ -188,7 +195,7 @@ function Invoke-NetworkPathTuning {
     }
 
     try {
-      Enable-UjLocalQosMarking -DryRun:$DryRun
+      Enable-NetworkTuningLocalQosMarking -DryRun:$DryRun
       $components['LocalQos'] = if ($DryRun) { 'Skipped' } else { 'OK' }
     } catch {
       $warnings.Add("LocalQos failed: $($_.Exception.Message)") | Out-Null
@@ -200,7 +207,7 @@ function Invoke-NetworkPathTuning {
       try {
         $qosPortPoliciesSucceeded = $true
         foreach ($port in $normalizedPorts) {
-          $policyResult = New-UjDscpPolicyByPort -Name ("{0}{1}" -f $script:UjQosPortPrefix, $port) -PortStart $port -PortEnd $port -Dscp $Dscp -DryRun:$DryRun
+          $policyResult = New-NetworkTuningDscpPolicyByPort -Name ("{0}{1}" -f $script:NetworkTuningQosPortPrefix, $port) -PortStart $port -PortEnd $port -Dscp $Dscp -DryRun:$DryRun
           if ($false -eq $policyResult) { $qosPortPoliciesSucceeded = $false }
         }
         $components['QosPortPolicies'] = if ($DryRun) { 'Skipped' } elseif ($qosPortPoliciesSucceeded) { 'OK' } else { 'Warn' }
@@ -223,7 +230,7 @@ function Invoke-NetworkPathTuning {
         $qosAppPoliciesSucceeded = $true
         foreach ($path in $normalizedApps) {
           $i++
-          $appPolicyResult = New-UjDscpPolicyByApp -Name ("{0}{1}" -f $script:UjQosAppPrefix, $i) -ExePath $path -Dscp $Dscp -DryRun:$DryRun
+          $appPolicyResult = New-NetworkTuningDscpPolicyByApp -Name ("{0}{1}" -f $script:NetworkTuningQosAppPrefix, $i) -ExePath $path -Dscp $Dscp -DryRun:$DryRun
           if ($false -eq $appPolicyResult) { $qosAppPoliciesSucceeded = $false }
         }
         $components['QosAppPolicies'] = if ($DryRun) { 'Skipped' } elseif ($qosAppPoliciesSucceeded) { 'OK' } else { 'Warn' }
@@ -242,7 +249,7 @@ function Invoke-NetworkPathTuning {
 
     if ($TuningProfile -eq 'Measured') {
       try {
-        $nicResult = Set-UjNicConfiguration -Preset 1 -DryRun:$DryRun
+        $nicResult = Set-NetworkTuningNicConfiguration -DryRun:$DryRun
         $components['NicPowerSaving'] = if ($DryRun) { 'Skipped' } elseif ($false -eq $nicResult) { 'Warn' } else { 'OK' }
         if (-not $DryRun -and $false -eq $nicResult) {
           $warnings.Add('NicPowerSaving failed: one or more NIC settings could not be changed.') | Out-Null
@@ -260,7 +267,7 @@ function Invoke-NetworkPathTuning {
     $effectivePowerPlan = if ($PowerPlan -eq 'None' -and $TuningProfile -eq 'Measured') { 'HighPerformance' } else { $PowerPlan }
     if ($effectivePowerPlan -ne 'None') {
       try {
-        $powerPlanResult = Set-UjPowerPlan -PowerPlan $effectivePowerPlan -DryRun:$DryRun
+        $powerPlanResult = Set-NetworkTuningPowerPlan -PowerPlan $effectivePowerPlan -DryRun:$DryRun
         $components['PowerPlan'] = if ($DryRun) { 'Skipped' } elseif ($false -eq $powerPlanResult) { 'Warn' } else { 'OK' }
         if (-not $DryRun -and $false -eq $powerPlanResult) {
           $warnings.Add('PowerPlan failed: the selected power plan could not be activated.') | Out-Null

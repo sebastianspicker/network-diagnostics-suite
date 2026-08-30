@@ -1,18 +1,4 @@
-function Test-NetworkTuningAdministrator {
-  [CmdletBinding()]
-  [OutputType([bool])]
-  param()
-
-  try {
-    $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
-    return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-  } catch {
-    Write-Verbose -Message 'Admin check failed (non-Windows or restricted platform).'
-    return $false
-  }
-}
-
-function Assert-UjAdministrator {
+function Assert-NetworkTuningAdministrator {
   [CmdletBinding()]
   [OutputType([void])]
   param()
@@ -22,7 +8,7 @@ function Assert-UjAdministrator {
   }
 }
 
-function Get-UjGuidFromText {
+function Get-NetworkTuningGuidFromText {
   [CmdletBinding()]
   [OutputType([string])]
   param(

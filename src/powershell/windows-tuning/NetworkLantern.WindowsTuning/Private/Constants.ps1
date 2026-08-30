@@ -2,47 +2,53 @@
 # Dot-sourced first by the module so all Private/Public scripts can reference them.
 
 # Registry paths for PowerShell provider (with colon)
-$script:UjRegistryPathSystemProfile = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile'
-$script:UjRegistryPathAfdParameters = 'HKLM:\SYSTEM\CurrentControlSet\Services\AFD\Parameters'
-$script:UjRegistryPathQos = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\QoS'
+$script:NetworkTuningRegistryPathSystemProfile = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile'
+$script:NetworkTuningRegistryPathAfdParameters = 'HKLM:\SYSTEM\CurrentControlSet\Services\AFD\Parameters'
+$script:NetworkTuningRegistryPathQos = 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\QoS'
 
-# Default backup folder (single source of truth; CLI/GUI use this or Get-UjDefaultBackupFolder)
+# Default backup folder, exposed through Get-NetworkLanternDefaultBackupFolder.
 # On non-Windows (e.g. tests on macOS) avoid C: drive so Join-Path does not fail
-$script:UjDefaultBackupFolderBase = if ([string]::IsNullOrWhiteSpace($env:ProgramData)) {
+$script:NetworkTuningDefaultBackupFolderBase = if ([string]::IsNullOrWhiteSpace($env:ProgramData)) {
   if ($env:OS -eq 'Windows_NT') { 'C:\ProgramData' } else { [System.IO.Path]::GetTempPath().TrimEnd([System.IO.Path]::DirectorySeparatorChar) }
 } else {
   $env:ProgramData
 }
-$script:UjDefaultBackupFolder = Join-Path -Path $script:UjDefaultBackupFolderBase -ChildPath 'NetworkLantern'
-$script:UjLegacyDefaultBackupFolder = Join-Path -Path $script:UjDefaultBackupFolderBase -ChildPath 'NetworkDiagnosticsSuite'
-$script:UjToolName = 'network-lantern'
-$script:UjCompatibleToolNames = @($script:UjToolName, 'network-diagnostics-suite')
+$script:NetworkTuningDefaultBackupFolder = Join-Path -Path $script:NetworkTuningDefaultBackupFolderBase -ChildPath 'NetworkLantern'
+$script:NetworkTuningLegacyDefaultBackupFolder = Join-Path -Path $script:NetworkTuningDefaultBackupFolderBase -ChildPath 'NetworkDiagnosticsSuite'
+$script:NetworkTuningToolName = 'network-lantern'
+$script:NetworkTuningCompatibleToolNames = @($script:NetworkTuningToolName, 'network-diagnostics-suite')
 
 # Backup file names (child names under BackupFolder)
-$script:UjBackupFileManifest = 'backup_manifest.json'
-$script:UjBackupFileSystemProfile = 'SystemProfile.reg'
-$script:UjBackupFileAfdParameters = 'AFD_Parameters.reg'
-$script:UjBackupFileQosOurs = 'qos_ours.xml'
-$script:UjBackupFileNicAdvanced = 'nic_advanced_backup.csv'
-$script:UjBackupFileRsc = 'rsc_backup.csv'
-$script:UjBackupFilePowerplan = 'powerplan.txt'
-$script:UjBackupSchemaVersion = 3
+$script:NetworkTuningBackupFileManifest = 'backup_manifest.json'
+$script:NetworkTuningBackupFileSystemProfile = 'SystemProfile.reg'
+$script:NetworkTuningBackupFileAfdParameters = 'AFD_Parameters.reg'
+$script:NetworkTuningBackupFileQosOurs = 'qos_ours.xml'
+$script:NetworkTuningBackupFileNicAdvanced = 'nic_advanced_backup.csv'
+$script:NetworkTuningBackupFileRsc = 'rsc_backup.csv'
+$script:NetworkTuningBackupFilePowerplan = 'powerplan.txt'
+$script:NetworkTuningBackupSchemaVersion = 3
+$script:NetworkTuningMaxManifestBytes = 1MB
+$script:NetworkTuningMaxRegistryBackupBytes = 1MB
+$script:NetworkTuningMaxCsvBackupBytes = 1MB
+$script:NetworkTuningMaxQosBackupBytes = 4MB
+$script:NetworkTuningMaxBackupRows = 512
+$script:NetworkTuningMaxBackupJsonDepth = 32
 
 # Default DSCP value for QoS policies (EF / Expedited Forwarding)
-$script:UjDefaultDscp = 46
+$script:NetworkTuningDefaultDscp = 46
 
 # Windows power plan GUIDs
-$script:UjPowerPlanGuidBalanced        = '381b4222-f694-41f0-9685-ff5bb260df2e'
-$script:UjPowerPlanGuidHighPerformance = '8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c'
-$script:UjPowerPlanGuidUltimate        = 'e9a42b02-d5df-448d-aa00-03f14749eb61'
+$script:NetworkTuningPowerPlanGuidBalanced        = '381b4222-f694-41f0-9685-ff5bb260df2e'
+$script:NetworkTuningPowerPlanGuidHighPerformance = '8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c'
+$script:NetworkTuningPowerPlanGuidUltimate        = 'e9a42b02-d5df-448d-aa00-03f14749eb61'
 
 # QoS naming ownership boundaries managed by this module.
 # Only these prefixes are treated as removable/restorable managed policies.
-$script:UjQosPortPrefix = 'NETWORK_LANTERN_QOS_PORT_'
-$script:UjQosAppPrefix = 'NETWORK_LANTERN_QOS_APP_'
-$script:UjManagedQosNamePrefixes = @(
-  $script:UjQosPortPrefix,
-  $script:UjQosAppPrefix,
+$script:NetworkTuningQosPortPrefix = 'NETWORK_LANTERN_QOS_PORT_'
+$script:NetworkTuningQosAppPrefix = 'NETWORK_LANTERN_QOS_APP_'
+$script:NetworkTuningManagedQosNamePrefixes = @(
+  $script:NetworkTuningQosPortPrefix,
+  $script:NetworkTuningQosAppPrefix,
   'NDS_QOS_PORT_',
   'NDS_QOS_APP_',
   'QoS_UDP_TS_',
@@ -51,11 +57,11 @@ $script:UjManagedQosNamePrefixes = @(
 )
 
 # Maximum number of per-port QoS policies (cap for large port ranges)
-$script:UjMaxPortPolicies = 100
+$script:NetworkTuningMaxPortPolicies = 100
 
 # Standardized Registry Keywords (Microsoft specification) for NIC properties.
 # These are locale-independent and driver-agnostic.
-$script:UjNicKeywordMap = @{
+$script:NetworkTuningNicKeywordMap = @{
   'Energy Efficient Ethernet'      = '*EEE'
   'Interrupt Moderation'           = '*InterruptModeration'
   'Flow Control'                   = '*FlowControl'
@@ -81,17 +87,17 @@ $script:UjNicKeywordMap = @{
 
 # NIC keywords classified by evidence strength and impact tier.
 # Tier 1 (Safe): Zero-risk, no tradeoffs. Power-saving disables.
-$script:UjNicKeywordsTier1 = @('*EEE', '*GreenEthernet', '*PowerSavingMode')
+$script:NetworkTuningNicKeywordsTier1 = @('*EEE', '*GreenEthernet', '*PowerSavingMode')
 
 # Tier 2 (Moderate): Proven with small documented tradeoffs (slightly higher CPU).
-$script:UjNicKeywordsTier2 = @('*InterruptModeration', '*FlowControl')
+$script:NetworkTuningNicKeywordsTier2 = @('*InterruptModeration', '*FlowControl')
 
 # Tier 3 (Aggressive): Maximum UDP optimization, measurable tradeoffs.
-$script:UjNicKeywordsTier3 = @('*UDPChecksumOffloadIPv4', '*UDPChecksumOffloadIPv6', '*InterruptModerationRate')
+$script:NetworkTuningNicKeywordsTier3 = @('*UDPChecksumOffloadIPv4', '*UDPChecksumOffloadIPv6', '*InterruptModerationRate')
 
 # Experimental: TCP-only, WoL/sleep-only, or unproven settings.
 # These have zero proven impact on UDP jitter during active use.
-$script:UjNicKeywordsExperimental = @(
+$script:NetworkTuningNicKeywordsExperimental = @(
   '*TCPChecksumOffloadIPv4', '*TCPChecksumOffloadIPv6',
   '*LsoV2IPv4', '*LsoV2IPv6',
   '*ARPOffload', '*NSOffload',
@@ -100,14 +106,8 @@ $script:UjNicKeywordsExperimental = @(
   '*ReceiveBuffers', '*TransmitBuffers'
 )
 
-# Reset list is the union of all tiers (backward compatible)
-$script:UjNicResetKeywords = $script:UjNicKeywordsTier1 + $script:UjNicKeywordsTier2 +
-  $script:UjNicKeywordsTier3 + $script:UjNicKeywordsExperimental
-
 # Reverse lookup: keyword -> display name (for logging)
-$script:UjNicKeywordReverseMap = @{}
-foreach ($entry in $script:UjNicKeywordMap.GetEnumerator()) {
-  $script:UjNicKeywordReverseMap[$entry.Value] = $entry.Key
+$script:NetworkTuningNicKeywordReverseMap = @{}
+foreach ($entry in $script:NetworkTuningNicKeywordMap.GetEnumerator()) {
+  $script:NetworkTuningNicKeywordReverseMap[$entry.Value] = $entry.Key
 }
-
-$script:UjOwnedMmcssAudioValueNames = @('Priority', 'BackgroundOnly', 'Clock Rate', 'SchedulingCategory', 'SFIOPriority')

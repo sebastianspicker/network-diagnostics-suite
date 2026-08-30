@@ -47,21 +47,6 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $manifestPath = Join-Path $repoRoot 'src/powershell/windows-tuning/NetworkLantern.WindowsTuning/NetworkLantern.WindowsTuning.psd1'
 Import-Module -Name $manifestPath -Force
 
-if (-not $PSBoundParameters.ContainsKey('BackupFolder')) {
-  $defaultBackupFolder = Get-NetworkLanternDefaultBackupFolder
-  if ($Action -eq 'Restore') {
-    $manifestName = 'backup_manifest.json'
-    $legacyBackupFolder = Join-Path -Path (Split-Path -Parent $defaultBackupFolder) -ChildPath 'NetworkDiagnosticsSuite'
-    $newManifestPath = Join-Path -Path $defaultBackupFolder -ChildPath $manifestName
-    $legacyManifestPath = Join-Path -Path $legacyBackupFolder -ChildPath $manifestName
-    if (-not (Test-Path -LiteralPath $newManifestPath -PathType Leaf) -and
-        (Test-Path -LiteralPath $legacyManifestPath -PathType Leaf)) {
-      $defaultBackupFolder = $legacyBackupFolder
-    }
-  }
-  $PSBoundParameters['BackupFolder'] = $defaultBackupFolder
-}
-
 $callerRequestedPassThru = [bool]$PassThru
 $PSBoundParameters['PassThru'] = $true
 $result = Invoke-NetworkPathTuning @PSBoundParameters

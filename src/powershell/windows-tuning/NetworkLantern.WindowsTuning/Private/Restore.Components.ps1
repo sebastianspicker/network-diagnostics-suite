@@ -1,4 +1,4 @@
-function Restore-UjRegistryFromBackup {
+function Restore-NetworkTuningRegistryFromBackup {
   [CmdletBinding(SupportsShouldProcess = $true)]
   [OutputType([pscustomobject])]
   param(
@@ -12,58 +12,58 @@ function Restore-UjRegistryFromBackup {
   $failedCount = 0
 
   $registryArtifacts = @(
-      @{ Path = (Join-Path -Path $BackupFolder -ChildPath $script:UjBackupFileSystemProfile); Contract = 'SystemProfile' },
-      @{ Path = (Join-Path -Path $BackupFolder -ChildPath $script:UjBackupFileAfdParameters); Contract = 'AfdParameters' }
+      @{ Path = (Join-Path -Path $BackupFolder -ChildPath $script:NetworkTuningBackupFileSystemProfile); Contract = 'SystemProfile' },
+      @{ Path = (Join-Path -Path $BackupFolder -ChildPath $script:NetworkTuningBackupFileAfdParameters); Contract = 'AfdParameters' }
     ) | Where-Object { Test-Path -LiteralPath $_.Path -PathType Leaf }
 
   foreach ($artifact in $registryArtifacts) {
-    Assert-UjRestoreStagingConsumerInvariant -Session $StagingSession -Manifest $Manifest
-    $validation = Test-UjRegistryBackupFile -InFile $artifact.Path -ContractName $artifact.Contract
+    Assert-NetworkTuningRestoreStagingConsumerInvariant -Session $StagingSession -Manifest $Manifest
+    $validation = Test-NetworkTuningRegistryBackupFile -InFile $artifact.Path -ContractName $artifact.Contract
     if (-not $validation.IsApproved) {
       Write-Warning -Message ("Refusing to restore an unapproved registry backup: {0}" -f $validation.Message)
-      return Get-UjRestoreComponentResult -Status 'Warn' -Message $validation.Message
+      return Get-NetworkTuningRestoreComponentResult -Status 'Warn' -Message $validation.Message
     }
   }
 
   foreach ($artifact in $registryArtifacts) {
     if ($PSCmdlet.ShouldProcess($artifact.Path, 'Import registry file')) {
-      Assert-UjRestoreStagingConsumerInvariant -Session $StagingSession -Manifest $Manifest
+      Assert-NetworkTuningRestoreStagingConsumerInvariant -Session $StagingSession -Manifest $Manifest
       $approvedCount++
-      if (-not (Import-UjRegistryFile -InFile $artifact.Path -ContractName $artifact.Contract)) { $failedCount++ }
+      if (-not (Import-NetworkTuningRegistryFile -InFile $artifact.Path -ContractName $artifact.Contract)) { $failedCount++ }
     } else {
       $deniedCount++
     }
   }
 
   if ($approvedCount -eq 0) {
-    return Get-UjRestoreComponentResult -Status 'Skipped' -Message 'Registry restore skipped by ShouldProcess.'
+    return Get-NetworkTuningRestoreComponentResult -Status 'Skipped' -Message 'Registry restore skipped by ShouldProcess.'
   }
 
   if ($failedCount -gt 0 -or $deniedCount -gt 0) {
-    return Get-UjRestoreComponentResult -Status 'Warn' -Message 'One or more registry keys failed to restore or were denied by ShouldProcess.'
+    return Get-NetworkTuningRestoreComponentResult -Status 'Warn' -Message 'One or more registry keys failed to restore or were denied by ShouldProcess.'
   }
 
-  return Get-UjRestoreComponentResult -Status 'OK' -Message 'Registry keys restored.'
+  return Get-NetworkTuningRestoreComponentResult -Status 'OK' -Message 'Registry keys restored.'
 }
 
-function Restore-UjNicFromBackup {
+function Restore-NetworkTuningNicFromBackup {
   [CmdletBinding(SupportsShouldProcess = $true)]
   [OutputType([pscustomobject])]
   param([Parameter(Mandatory)][string]$BackupFolder)
 
-  $csv = Join-Path -Path $BackupFolder -ChildPath $script:UjBackupFileNicAdvanced
+  $csv = Join-Path -Path $BackupFolder -ChildPath $script:NetworkTuningBackupFileNicAdvanced
   if (-not (Test-Path -LiteralPath $csv -PathType Leaf)) {
-    return Get-UjRestoreComponentResult -Status 'Skipped' -Message 'NIC advanced backup file not found.'
+    return Get-NetworkTuningRestoreComponentResult -Status 'Skipped' -Message 'NIC advanced backup file not found.'
   }
 
   $hadFailure = $false
   $didWork = $false
   try {
-    $data = Import-Csv -LiteralPath $csv
+    $data = @(Read-NetworkTuningBoundedTextFile -Path $csv -MaximumBytes $script:NetworkTuningMaxCsvBackupBytes | ConvertFrom-Csv -ErrorAction Stop)
     $firstRow = $data | Select-Object -First 1
     if (-not $firstRow -or -not ($firstRow.PSObject.Properties.Name -contains 'Adapter')) {
-      Write-Warning -Message 'Could not restore network adapter settings: the backup file is missing or corrupted. You can use "Reset to Defaults" instead to return to stock settings.'
-      return Get-UjRestoreComponentResult -Status 'Warn' -Message 'NIC backup CSV is invalid.'
+      Write-Warning -Message 'Could not restore network adapter settings because the backup file is missing or corrupted. Keep the current adapter settings or restore from another validated backup.'
+      return Get-NetworkTuningRestoreComponentResult -Status 'Warn' -Message 'NIC backup CSV is invalid.'
     }
 
     $adapters = $data | Select-Object -ExpandProperty Adapter -Unique
@@ -91,34 +91,34 @@ function Restore-UjNicFromBackup {
       }
     }
   } catch {
-    Write-Warning -Message 'Something went wrong restoring network adapter settings. You can use "Reset to Defaults" to return to stock settings.'
-    return Get-UjRestoreComponentResult -Status 'Warn' -Message 'NIC advanced restore failed during CSV import or parsing.'
+    Write-Warning -Message 'Something went wrong restoring network adapter settings. No further adapter changes were made; restore from another validated backup if needed.'
+    return Get-NetworkTuningRestoreComponentResult -Status 'Warn' -Message 'NIC advanced restore failed during CSV import or parsing.'
   }
 
   if (-not $didWork) {
-    return Get-UjRestoreComponentResult -Status 'Skipped' -Message 'NIC advanced restore skipped by ShouldProcess.'
+    return Get-NetworkTuningRestoreComponentResult -Status 'Skipped' -Message 'NIC advanced restore skipped by ShouldProcess.'
   }
 
   if ($hadFailure) {
-    return Get-UjRestoreComponentResult -Status 'Warn' -Message 'One or more NIC properties failed to restore.'
+    return Get-NetworkTuningRestoreComponentResult -Status 'Warn' -Message 'One or more NIC properties failed to restore.'
   }
 
-  return Get-UjRestoreComponentResult -Status 'OK' -Message 'NIC advanced properties restored.'
+  return Get-NetworkTuningRestoreComponentResult -Status 'OK' -Message 'NIC advanced properties restored.'
 }
 
-function Restore-UjRscFromBackup {
+function Restore-NetworkTuningRscFromBackup {
   [CmdletBinding(SupportsShouldProcess = $true)]
   [OutputType([pscustomobject])]
   param([Parameter(Mandatory)][string]$BackupFolder)
 
-  $rscFile = Join-Path -Path $BackupFolder -ChildPath $script:UjBackupFileRsc
+  $rscFile = Join-Path -Path $BackupFolder -ChildPath $script:NetworkTuningBackupFileRsc
   if (-not (Test-Path -LiteralPath $rscFile -PathType Leaf)) {
-    return Get-UjRestoreComponentResult -Status 'Skipped' -Message 'RSC backup file not found.'
+    return Get-NetworkTuningRestoreComponentResult -Status 'Skipped' -Message 'RSC backup file not found.'
   }
 
   $didWork = $false
   try {
-    foreach ($row in (Import-Csv -LiteralPath $rscFile)) {
+    foreach ($row in @(Read-NetworkTuningBoundedTextFile -Path $rscFile -MaximumBytes $script:NetworkTuningMaxCsvBackupBytes | ConvertFrom-Csv -ErrorAction Stop)) {
       if ([string]::IsNullOrWhiteSpace($row.Name)) {
         continue
       }
@@ -141,49 +141,48 @@ function Restore-UjRscFromBackup {
     }
   } catch {
     Write-Verbose -Message 'RSC restore failed.'
-    return Get-UjRestoreComponentResult -Status 'Warn' -Message 'RSC restore failed.'
+    return Get-NetworkTuningRestoreComponentResult -Status 'Warn' -Message 'RSC restore failed.'
   }
 
   if (-not $didWork) {
-    return Get-UjRestoreComponentResult -Status 'Skipped' -Message 'RSC restore skipped by ShouldProcess.'
+    return Get-NetworkTuningRestoreComponentResult -Status 'Skipped' -Message 'RSC restore skipped by ShouldProcess.'
   }
 
-  return Get-UjRestoreComponentResult -Status 'OK' -Message 'RSC state restored.'
+  return Get-NetworkTuningRestoreComponentResult -Status 'OK' -Message 'RSC state restored.'
 }
 
-function Restore-UjPowerPlanFromBackup {
+function Restore-NetworkTuningPowerPlanFromBackup {
   [CmdletBinding(SupportsShouldProcess = $true)]
   [OutputType([pscustomobject])]
   param([Parameter(Mandatory)][string]$BackupFolder)
 
-  $powerPlanFile = Join-Path -Path $BackupFolder -ChildPath $script:UjBackupFilePowerplan
+  $powerPlanFile = Join-Path -Path $BackupFolder -ChildPath $script:NetworkTuningBackupFilePowerplan
   if (-not (Test-Path -LiteralPath $powerPlanFile -PathType Leaf)) {
-    return Get-UjRestoreComponentResult -Status 'Skipped' -Message 'Power plan backup file not found.'
+    return Get-NetworkTuningRestoreComponentResult -Status 'Skipped' -Message 'Power plan backup file not found.'
   }
 
-  $text = Get-Content -LiteralPath $powerPlanFile -Raw
-  $guid = Get-UjGuidFromText -Text $text
+  $text = Read-NetworkTuningBoundedTextFile -Path $powerPlanFile -MaximumBytes 64
+  $guid = Get-NetworkTuningGuidFromText -Text $text
 
   if (-not $guid) {
     Write-Warning -Message 'Could not restore your previous power plan: the backup file does not contain a valid plan ID. Your power plan was not changed.'
-    return Get-UjRestoreComponentResult -Status 'Warn' -Message 'Power plan GUID missing or invalid.'
+    return Get-NetworkTuningRestoreComponentResult -Status 'Warn' -Message 'Power plan GUID missing or invalid.'
   }
 
   if (-not $PSCmdlet.ShouldProcess($guid, 'Restore power plan')) {
-    return Get-UjRestoreComponentResult -Status 'Skipped' -Message 'Power plan restore skipped by ShouldProcess.'
+    return Get-NetworkTuningRestoreComponentResult -Status 'Skipped' -Message 'Power plan restore skipped by ShouldProcess.'
   }
 
   try {
     $null = & powercfg /S $guid 2>&1
     if ($LASTEXITCODE -ne 0) {
       Write-Warning -Message ("Could not restore your previous power plan. The saved plan may have been removed from this PC (error code {0})." -f $LASTEXITCODE)
-      return Get-UjRestoreComponentResult -Status 'Warn' -Message ('powercfg /S exited with non-zero status.')
+      return Get-NetworkTuningRestoreComponentResult -Status 'Warn' -Message ('powercfg /S exited with non-zero status.')
     }
   } catch {
     Write-Verbose -Message ("Power plan restore failed: {0}" -f $_.Exception.Message)
-    return Get-UjRestoreComponentResult -Status 'Warn' -Message 'Power plan restore threw an exception.'
+    return Get-NetworkTuningRestoreComponentResult -Status 'Warn' -Message 'Power plan restore threw an exception.'
   }
 
-  return Get-UjRestoreComponentResult -Status 'OK' -Message 'Power plan restored.'
+  return Get-NetworkTuningRestoreComponentResult -Status 'OK' -Message 'Power plan restored.'
 }
-

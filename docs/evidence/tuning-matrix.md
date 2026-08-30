@@ -25,9 +25,8 @@ The public Apply path does not change these settings:
 - Game DVR state
 - arbitrary registry tuning bundles
 
-Private helpers and reset compatibility code may contain handling for settings
-outside the public Apply profiles. Their presence does not make them part of a
-current profile.
+Retired historical mutation and reset paths are not loaded by the module and
+are not part of any current profile.
 
 ## Mutation controls
 
@@ -40,8 +39,6 @@ current profile.
   component.
 - Managed QoS cleanup is limited to known Network Lantern and compatibility
   prefixes.
-- Reset compatibility code removes only named MMCSS audio values instead of
-  deleting the shared key.
 - `-DryRun` performs no backup or Windows configuration write.
 
 ## Verification status
@@ -52,7 +49,7 @@ current profile.
 | Umbrella Windows tuning dry run | Verified on Windows without elevation |
 | Backup refusal before mutation | Covered by Pester |
 | Manifest shape, schema, digest, path, registry-content, and staging checks | Covered by Pester |
-| Managed QoS and reset ownership boundaries | Covered by Pester |
+| Managed QoS ownership boundaries | Covered by Pester |
 | Native elevated apply, injected failure, and restore | Not verified for this revision |
 
 Do not treat real Windows mutation as a supported recovery workflow until the

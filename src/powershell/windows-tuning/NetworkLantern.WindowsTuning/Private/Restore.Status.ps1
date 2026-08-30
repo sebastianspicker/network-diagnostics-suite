@@ -1,4 +1,4 @@
-function Get-UjRestoreComponentResult {
+function Get-NetworkTuningRestoreComponentResult {
   [CmdletBinding()]
   [OutputType([pscustomobject])]
   param(
@@ -16,7 +16,7 @@ function Get-UjRestoreComponentResult {
   }
 }
 
-function Resolve-UjRestoreStatus {
+function Resolve-NetworkTuningRestoreStatus {
   [CmdletBinding()]
   [OutputType([string])]
   param(
@@ -55,7 +55,7 @@ function Resolve-UjRestoreStatus {
   return $DefaultIfNull
 }
 
-function Get-UjStagingBlockedRestoreStatus {
+function Get-NetworkTuningStagingBlockedRestoreStatus {
   [CmdletBinding()]
   [OutputType([System.Collections.Specialized.OrderedDictionary])]
   param(
@@ -65,7 +65,7 @@ function Get-UjStagingBlockedRestoreStatus {
   $status = [ordered]@{ Manifest = 'Warn' }
   foreach ($componentName in @('Registry', 'Qos', 'NicAdvanced', 'Rsc', 'PowerPlan')) {
     $status[$componentName] = if ($RestoreResults.Contains($componentName)) {
-      Resolve-UjRestoreStatus -Result $RestoreResults[$componentName]
+      Resolve-NetworkTuningRestoreStatus -Result $RestoreResults[$componentName]
     } else {
       'Skipped'
     }

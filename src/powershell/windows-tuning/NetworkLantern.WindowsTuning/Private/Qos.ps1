@@ -1,4 +1,4 @@
-function Get-UjManagedQosPolicy {
+function Get-NetworkTuningManagedQosPolicy {
   [CmdletBinding()]
   [OutputType('Microsoft.Management.Infrastructure.CimInstance')]
   param(
@@ -9,7 +9,7 @@ function Get-UjManagedQosPolicy {
   try {
     Get-NetQosPolicy -ErrorAction Stop | Where-Object {
       $name = [string]$_.Name
-      foreach ($prefix in $script:UjManagedQosNamePrefixes) {
+      foreach ($prefix in $script:NetworkTuningManagedQosNamePrefixes) {
         if ($name.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
           return $true
         }
@@ -26,25 +26,7 @@ function Get-UjManagedQosPolicy {
   }
 }
 
-function Remove-UjManagedQosPolicy {
-  [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
-  [OutputType([bool])]
-  param()
-
-  foreach ($policy in (Get-UjManagedQosPolicy)) {
-    if (-not $PSCmdlet.ShouldProcess($policy.Name, 'Remove NetQosPolicy')) {
-      continue
-    }
-
-    try {
-      Remove-NetQosPolicy -Name $policy.Name -Confirm:$false -ErrorAction Stop | Out-Null
-    } catch {
-      Write-Verbose -Message ("Failed to remove QoS policy: {0}" -f $policy.Name)
-    }
-  }
-}
-
-function New-UjDscpPolicyByPort {
+function New-NetworkTuningDscpPolicyByPort {
   [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
   [OutputType([void])]
   param(
@@ -59,7 +41,7 @@ function New-UjDscpPolicyByPort {
 
     [Parameter()]
     [ValidateRange(0, 63)]
-    [sbyte]$Dscp = $script:UjDefaultDscp,
+    [sbyte]$Dscp = $script:NetworkTuningDefaultDscp,
 
     [Parameter()]
     [switch]$DryRun
@@ -70,7 +52,7 @@ function New-UjDscpPolicyByPort {
   }
 
   $portCount = [int]$PortEnd - [int]$PortStart + 1
-  $maxIndividualPolicies = $script:UjMaxPortPolicies
+  $maxIndividualPolicies = $script:NetworkTuningMaxPortPolicies
 
   if ($portCount -gt $maxIndividualPolicies) {
     Write-Warning -Message ("Your port range covers {0} ports, which is a lot. Windows may slow down with too many individual QoS rules." -f $portCount)
@@ -82,12 +64,12 @@ function New-UjDscpPolicyByPort {
 
   if ($DryRun) {
     $actualCount = $effectivePortEnd - [int]$PortStart + 1
-    Write-UjInformation -Message ("[DryRun] QoS {0} UDP {1}-{2} DSCP={3} ({4} individual policies)" -f $Name, $PortStart, $effectivePortEnd, $Dscp, $actualCount)
+    Write-NetworkTuningInformation -Message ("[DryRun] QoS {0} UDP {1}-{2} DSCP={3} ({4} individual policies)" -f $Name, $PortStart, $effectivePortEnd, $Dscp, $actualCount)
     return $true
   }
 
   # Clean up existing policies that match the prefix
-  $existingPolicies = Get-UjManagedQosPolicy | Where-Object { $_.Name -match ("^" + [regex]::Escape($Name)) }
+  $existingPolicies = Get-NetworkTuningManagedQosPolicy | Where-Object { $_.Name -match ("^" + [regex]::Escape($Name)) }
   foreach ($existing in $existingPolicies) {
     if ($PSCmdlet.ShouldProcess($existing.Name, 'Remove existing NetQosPolicy')) {
       try { Remove-NetQosPolicy -Name $existing.Name -Confirm:$false -ErrorAction Stop | Out-Null }
@@ -112,7 +94,7 @@ function New-UjDscpPolicyByPort {
   return $true
 }
 
-function New-UjDscpPolicyByApp {
+function New-NetworkTuningDscpPolicyByApp {
   [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
   [OutputType([bool])]
   param(
@@ -124,18 +106,18 @@ function New-UjDscpPolicyByApp {
 
     [Parameter()]
     [ValidateRange(0, 63)]
-    [sbyte]$Dscp = $script:UjDefaultDscp,
+    [sbyte]$Dscp = $script:NetworkTuningDefaultDscp,
 
     [Parameter()]
     [switch]$DryRun
   )
 
   if ($DryRun) {
-    Write-UjInformation -Message ("[DryRun] QoS {0} App={1} DSCP={2} (local store)" -f $Name, $ExePath, $Dscp)
+    Write-NetworkTuningInformation -Message ("[DryRun] QoS {0} App={1} DSCP={2} (local store)" -f $Name, $ExePath, $Dscp)
     return $true
   }
 
-  foreach ($existing in (Get-UjManagedQosPolicy | Where-Object { $_.Name -eq $Name })) {
+  foreach ($existing in (Get-NetworkTuningManagedQosPolicy | Where-Object { $_.Name -eq $Name })) {
     if (-not $PSCmdlet.ShouldProcess($existing.Name, 'Remove NetQosPolicy')) {
       continue
     }

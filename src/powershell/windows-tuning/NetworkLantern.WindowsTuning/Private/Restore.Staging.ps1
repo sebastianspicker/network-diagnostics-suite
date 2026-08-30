@@ -1,10 +1,10 @@
-function New-UjRestoreStagingSession {
+function New-NetworkTuningRestoreStagingSession {
   [CmdletBinding(SupportsShouldProcess = $true)]
   [OutputType([pscustomobject])]
   param()
 
   $isWindowsRuntime = [System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform([System.Runtime.InteropServices.OSPlatform]::Windows)
-  $parentPath = if ($isWindowsRuntime) { Get-UjWindowsRestoreStagingRoot } else { [System.IO.Path]::GetTempPath() }
+  $parentPath = if ($isWindowsRuntime) { Get-NetworkTuningWindowsRestoreStagingRoot } else { [System.IO.Path]::GetTempPath() }
   $stagingPath = Join-Path -Path $parentPath -ChildPath ("NetworkLantern-Restore-{0}" -f [guid]::NewGuid().ToString('N'))
   if (-not $PSCmdlet.ShouldProcess($stagingPath, 'Create restricted restore staging session')) {
     throw 'Restore staging session creation was declined.'
@@ -13,7 +13,7 @@ function New-UjRestoreStagingSession {
   $sentinelStream = $null
   try {
     if ($isWindowsRuntime) {
-      $stagingPath = Initialize-UjAdminOnlyDirectory -Path $stagingPath -Confirm:$false
+      $stagingPath = Initialize-NetworkTuningAdminOnlyDirectory -Path $stagingPath -Confirm:$false
     } else {
       [System.IO.Directory]::CreateDirectory($stagingPath) | Out-Null
       $stagingItem = Get-Item -LiteralPath $stagingPath -Force -ErrorAction Stop
@@ -35,7 +35,7 @@ function New-UjRestoreStagingSession {
     $sentinelStream.Flush($true)
     $sentinelStream.Position = 0
     if ($isWindowsRuntime) {
-      Protect-UjAdminOnlyFile -Path $sentinelPath -Confirm:$false
+      Protect-NetworkTuningAdminOnlyFile -Path $sentinelPath -Confirm:$false
     }
 
     return [pscustomobject]@{
@@ -53,7 +53,7 @@ function New-UjRestoreStagingSession {
   }
 }
 
-function Close-UjRestoreStagingSession {
+function Close-NetworkTuningRestoreStagingSession {
   [CmdletBinding()]
   [OutputType([void])]
   param(
@@ -68,7 +68,7 @@ function Close-UjRestoreStagingSession {
   }
 }
 
-function Test-UjRestoreStagingInvariant {
+function Test-NetworkTuningRestoreStagingInvariant {
   [CmdletBinding()]
   [OutputType([pscustomobject])]
   param(
@@ -91,7 +91,7 @@ function Test-UjRestoreStagingInvariant {
     }
 
     $pathsToInspect = @($fullPath, $expectedSentinelPath)
-    foreach ($artifactName in (Get-UjExpectedBackupArtifactNames -Manifest $Manifest)) {
+    foreach ($artifactName in (Get-NetworkTuningExpectedBackupArtifactNames -Manifest $Manifest)) {
       $pathsToInspect += Join-Path -Path $fullPath -ChildPath $artifactName
     }
     foreach ($path in $pathsToInspect) {
@@ -100,7 +100,7 @@ function Test-UjRestoreStagingInvariant {
         return [pscustomobject]@{ IsValid = $false; Message = "Restore staging path became a reparse point: $path" }
       }
       if ([bool]$Session.IsWindows) {
-        $pathCheck = Test-UjWindowsAdminOnlyPath -Path $path
+        $pathCheck = Test-NetworkTuningWindowsAdminOnlyPath -Path $path
         if (-not $pathCheck.IsTrusted) {
           return [pscustomobject]@{ IsValid = $false; Message = $pathCheck.Message }
         }
@@ -110,14 +110,18 @@ function Test-UjRestoreStagingInvariant {
     if ($null -eq $Session.SentinelStream -or $Session.SentinelStream.SafeFileHandle.IsClosed) {
       return [pscustomobject]@{ IsValid = $false; Message = 'Restore staging sentinel handle is not open.' }
     }
-    $sentinelText = Get-Content -LiteralPath $expectedSentinelPath -Raw -ErrorAction Stop
+    $sentinelText = Read-NetworkTuningBoundedTextFile -Path $expectedSentinelPath -MaximumBytes 128
     if ($sentinelText -cne [string]$Session.Nonce) {
       return [pscustomobject]@{ IsValid = $false; Message = 'Restore staging sentinel does not match the verified session.' }
     }
 
-    $digestCheck = Test-UjBackupArtifactDigests -BackupFolder $fullPath -Manifest $Manifest
+    $digestCheck = Test-NetworkTuningBackupArtifactDigests -BackupFolder $fullPath -Manifest $Manifest
     if (-not $digestCheck.IsValid) {
       return [pscustomobject]@{ IsValid = $false; Message = "Staged backup verification failed: $($digestCheck.Message)" }
+    }
+    $authorizationCheck = Test-NetworkTuningRestoreArtifactAuthorization -BackupFolder $fullPath -Manifest $Manifest
+    if (-not $authorizationCheck.IsAuthorized) {
+      return [pscustomobject]@{ IsValid = $false; Message = "Staged backup authorization failed: $($authorizationCheck.Message)" }
     }
   } catch {
     return [pscustomobject]@{ IsValid = $false; Message = "Restore staging invariant failed: $($_.Exception.Message)" }
@@ -126,7 +130,7 @@ function Test-UjRestoreStagingInvariant {
   return [pscustomobject]@{ IsValid = $true; Message = '' }
 }
 
-function Assert-UjRestoreStagingInvariant {
+function Assert-NetworkTuningRestoreStagingInvariant {
   [CmdletBinding()]
   [OutputType([void])]
   param(
@@ -134,7 +138,7 @@ function Assert-UjRestoreStagingInvariant {
     [Parameter(Mandatory)][hashtable]$Manifest
   )
 
-  $check = Test-UjRestoreStagingInvariant -Session $Session -Manifest $Manifest
+  $check = Test-NetworkTuningRestoreStagingInvariant -Session $Session -Manifest $Manifest
   if (-not $check.IsValid) {
     $exception = [System.InvalidOperationException]::new($check.Message)
     $exception.Data['NetworkLantern.RestoreStagingInvariant'] = $true
@@ -142,7 +146,7 @@ function Assert-UjRestoreStagingInvariant {
   }
 }
 
-function Assert-UjRestoreStagingConsumerInvariant {
+function Assert-NetworkTuningRestoreStagingConsumerInvariant {
   [CmdletBinding()]
   [OutputType([void])]
   param(
@@ -150,10 +154,53 @@ function Assert-UjRestoreStagingConsumerInvariant {
     [Parameter(Mandatory)][hashtable]$Manifest
   )
 
-  Assert-UjRestoreStagingInvariant -Session $Session -Manifest $Manifest
+  Assert-NetworkTuningRestoreStagingInvariant -Session $Session -Manifest $Manifest
 }
 
-function Copy-UjVerifiedBackupToStaging {
+function Copy-NetworkTuningBoundedArtifactToStaging {
+  [CmdletBinding()]
+  [OutputType([string])]
+  param(
+    [Parameter(Mandatory)][string]$SourcePath,
+    [Parameter(Mandatory)][string]$DestinationPath,
+    [Parameter(Mandatory)][long]$MaximumBytes,
+    [Parameter(Mandatory)][string]$ExpectedSha256,
+    [Parameter(Mandatory)][bool]$WindowsRuntime
+  )
+
+  $sourceCheck = Test-NetworkTuningBackupPathEntryIsRegular -Path $SourcePath
+  if (-not $sourceCheck.IsTrusted) { throw $sourceCheck.Message }
+  $destinationStream = $null
+  $hasher = $null
+  try {
+    # The source is opened once, with sharing that denies replacement and
+    # writes. Hashing and copying consume the same bounded byte stream.
+    $destinationStream = [System.IO.File]::Open($DestinationPath, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+    $hasher = [System.Security.Cryptography.IncrementalHash]::CreateHash([System.Security.Cryptography.HashAlgorithmName]::SHA256)
+    Invoke-NetworkTuningBoundedFileStream -Path $SourcePath -MaximumBytes $MaximumBytes -OnChunk {
+      param($buffer, $read)
+      $hasher.AppendData($buffer, 0, $read)
+      $destinationStream.Write($buffer, 0, $read)
+    } | Out-Null
+    $destinationStream.Flush($true)
+    $hash = [System.Convert]::ToHexString($hasher.GetHashAndReset())
+  } finally {
+    if ($null -ne $hasher) { $hasher.Dispose() }
+    if ($null -ne $destinationStream) { $destinationStream.Dispose() }
+  }
+
+  if ($hash -cne $ExpectedSha256) { throw "Backup artifact digest mismatch while staging: $([System.IO.Path]::GetFileName($SourcePath))" }
+  $destinationCheck = Test-NetworkTuningBackupPathEntryIsRegular -Path $DestinationPath
+  if (-not $destinationCheck.IsTrusted) { throw $destinationCheck.Message }
+  if ($WindowsRuntime) {
+    Protect-NetworkTuningAdminOnlyFile -Path $DestinationPath -Confirm:$false
+    $destinationAclCheck = Test-NetworkTuningWindowsAdminOnlyPath -Path $DestinationPath
+    if (-not $destinationAclCheck.IsTrusted) { throw $destinationAclCheck.Message }
+  }
+  return $hash
+}
+
+function Copy-NetworkTuningVerifiedBackupToStaging {
   [CmdletBinding()]
   [OutputType([pscustomobject])]
   param(
@@ -161,22 +208,19 @@ function Copy-UjVerifiedBackupToStaging {
     [Parameter(Mandatory)][hashtable]$Manifest
   )
 
-  $session = New-UjRestoreStagingSession -Confirm:$false
+  $session = New-NetworkTuningRestoreStagingSession -Confirm:$false
   try {
-    foreach ($artifactName in (Get-UjExpectedBackupArtifactNames -Manifest $Manifest)) {
+    foreach ($artifactName in (Get-NetworkTuningExpectedBackupArtifactNames -Manifest $Manifest)) {
       $sourcePath = Join-Path -Path $BackupFolder -ChildPath $artifactName
       $destinationPath = Join-Path -Path $session.Path -ChildPath $artifactName
-      Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force -ErrorAction Stop
-      if ([bool]$session.IsWindows) {
-        Protect-UjAdminOnlyFile -Path $destinationPath -Confirm:$false
-      }
+      $expectedDigest = [string]$Manifest.ArtifactDigests[$artifactName]
+      Copy-NetworkTuningBoundedArtifactToStaging -SourcePath $sourcePath -DestinationPath $destinationPath -MaximumBytes (Get-NetworkTuningBackupArtifactMaximumBytes -FileName $artifactName) -ExpectedSha256 $expectedDigest -WindowsRuntime ([bool]$session.IsWindows) | Out-Null
     }
 
-    Assert-UjRestoreStagingInvariant -Session $session -Manifest $Manifest
+    Assert-NetworkTuningRestoreStagingInvariant -Session $session -Manifest $Manifest
     return $session
   } catch {
-    Close-UjRestoreStagingSession -Session $session
+    Close-NetworkTuningRestoreStagingSession -Session $session
     throw
   }
 }
-

@@ -63,6 +63,11 @@ cannot be enumerated. It does not verify NIC or power-plan state.
 The default backup folder is `%ProgramData%\NetworkLantern`. Use
 `-BackupFolder` to choose another trusted path.
 
+On first use, the module validates the existing `%ProgramData%` ancestor for
+SYSTEM ownership, safe ACL semantics, and reparse-point takeover before it
+creates the `NetworkLantern` child with an exact Administrators/SYSTEM-only
+ACL. Custom folders still require an already trusted private parent.
+
 Back up the supported state:
 
 ```powershell
@@ -122,9 +127,14 @@ pwsh -NoProfile -File .\apps\windows-tuning\Invoke-NetworkPathTuning.ps1 `
 
 Restore rejects missing, malformed, duplicate-key, incompatible-newer, or
 untrusted manifests. It also rejects missing required artifacts, digest
-mismatches, unsafe registry content, reparse-point backup paths, and replaced
-staging directories. Approved artifacts are copied to protected staging and
+mismatches, reparse-point backup paths, replaced staging directories, and
+registry, QoS, NIC, RSC, or power-plan content outside the module's managed
+schemas and scope. Approved artifacts are copied to protected staging and
 checked again before each restore component.
+
+Digests provide bundle integrity, not authenticated provenance. Restore only a
+locally created backup retained under trusted access control. An imported or
+transferred bundle requires an independent provenance check before use.
 
 When no explicit backup folder is supplied, Restore can use the previous
 default backup location if the current default has no manifest and the previous
@@ -136,11 +146,6 @@ The elevated apply and restore cycle has not been completed on a disposable
 Windows VM for this revision. Automated tests cover dry runs, backup refusal,
 manifest and digest validation, path trust, staging replacement, and scoped
 restore behavior.
-
-## GUI entrypoint
-
-`apps/windows-tuning/Invoke-NetworkPathTuning-GUI.ps1` prints the CLI path and
-exits. It does not load Windows Forms or change system state.
 
 ## Troubleshooting
 

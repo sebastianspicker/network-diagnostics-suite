@@ -11,7 +11,7 @@ are no command aliases for the old names.
 | `apps/throughput/iPerf3Test.ps1` | `apps/throughput/Measure-NetworkThroughput.ps1` |
 | `apps/throughput/iPerf3Test-GUI.ps1` | `apps/throughput/Measure-NetworkThroughput-GUI.ps1` |
 | `apps/windows-tuning/Optimize-NetworkPath.ps1` | `apps/windows-tuning/Invoke-NetworkPathTuning.ps1` |
-| `apps/windows-tuning/Optimize-NetworkPath-GUI.ps1` | `apps/windows-tuning/Invoke-NetworkPathTuning-GUI.ps1`, a CLI guidance stub |
+| `apps/windows-tuning/Optimize-NetworkPath-GUI.ps1` | No GUI replacement; use `apps/windows-tuning/Invoke-NetworkPathTuning.ps1` |
 | `Iperf3TestSuite` | `NetworkLantern.Throughput` |
 | `WindowsUdpJitterOptimization` | `NetworkLantern.WindowsTuning` |
 | `Get-NdsDefaultBackupFolder` | `Get-NetworkLanternDefaultBackupFolder` |

@@ -1,12 +1,4 @@
-function Get-UjRegistryPathForRegExe {
-  [CmdletBinding()]
-  [OutputType([string])]
-  param([Parameter(Mandatory)][string]$Path)
-  # Converts 'HKLM:\...' to 'HKLM\...' for reg.exe compatibility
-  return $Path -replace '^HKLM:', 'HKLM' -replace '^HKCU:', 'HKCU' -replace '^HKCR:', 'HKCR' -replace '^HKU:', 'HKU'
-}
-
-function Get-UjRegistryBackupContract {
+function Get-NetworkTuningRegistryBackupContract {
   [CmdletBinding()]
   [OutputType([pscustomobject])]
   param(
@@ -16,14 +8,14 @@ function Get-UjRegistryBackupContract {
   )
 
   if ($Name -eq 'SystemProfile') {
-    $audioPath = '{0}\Tasks\Audio' -f $script:UjRegistryPathSystemProfile.TrimEnd('\')
+    $audioPath = '{0}\Tasks\Audio' -f $script:NetworkTuningRegistryPathSystemProfile.TrimEnd('\')
     return [pscustomobject]@{
       Name = 'SystemProfile'
-      RegistryPath = $script:UjRegistryPathSystemProfile
-      ArtifactName = $script:UjBackupFileSystemProfile
+      RegistryPath = $script:NetworkTuningRegistryPathSystemProfile
+      ArtifactName = $script:NetworkTuningBackupFileSystemProfile
       Sections = @(
         [pscustomobject]@{
-          RegistryPath = $script:UjRegistryPathSystemProfile
+          RegistryPath = $script:NetworkTuningRegistryPathSystemProfile
           RegPath = 'HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile'
           Values = [ordered]@{
             SystemResponsiveness = 'DWord'
@@ -47,11 +39,11 @@ function Get-UjRegistryBackupContract {
 
   return [pscustomobject]@{
     Name = 'AfdParameters'
-    RegistryPath = $script:UjRegistryPathAfdParameters
-    ArtifactName = $script:UjBackupFileAfdParameters
+    RegistryPath = $script:NetworkTuningRegistryPathAfdParameters
+    ArtifactName = $script:NetworkTuningBackupFileAfdParameters
     Sections = @(
       [pscustomobject]@{
-        RegistryPath = $script:UjRegistryPathAfdParameters
+        RegistryPath = $script:NetworkTuningRegistryPathAfdParameters
         RegPath = 'HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\AFD\Parameters'
         Values = [ordered]@{
           FastSendDatagramThreshold = 'DWord'
@@ -61,7 +53,7 @@ function Get-UjRegistryBackupContract {
   }
 }
 
-function Get-UjRegistryBackupContractForPath {
+function Get-NetworkTuningRegistryBackupContractForPath {
   [CmdletBinding()]
   [OutputType([pscustomobject])]
   param(
@@ -70,7 +62,7 @@ function Get-UjRegistryBackupContractForPath {
   )
 
   foreach ($contractName in @('SystemProfile', 'AfdParameters')) {
-    $contract = Get-UjRegistryBackupContract -Name $contractName
+    $contract = Get-NetworkTuningRegistryBackupContract -Name $contractName
     if ($contract.RegistryPath -ieq $RegistryPath) {
       return $contract
     }
@@ -79,7 +71,7 @@ function Get-UjRegistryBackupContractForPath {
   return $null
 }
 
-function ConvertTo-UjRegStringData {
+function ConvertTo-NetworkTuningRegStringData {
   [CmdletBinding()]
   [OutputType([string])]
   param(
@@ -95,7 +87,7 @@ function ConvertTo-UjRegStringData {
   return '"' + $Value.Replace('\', '\\').Replace('"', '\"') + '"'
 }
 
-function Test-UjRegStringData {
+function Test-NetworkTuningRegStringData {
   [CmdletBinding()]
   [OutputType([bool])]
   param(
@@ -106,7 +98,7 @@ function Test-UjRegStringData {
   return $Data -cmatch '^"(?:[^"\\]|\\["\\])*"$'
 }
 
-function Test-UjRegistryBackupFile {
+function Test-NetworkTuningRegistryBackupFile {
   [CmdletBinding()]
   [OutputType([pscustomobject])]
   param(
@@ -123,12 +115,12 @@ function Test-UjRegistryBackupFile {
   }
 
   try {
-    $content = Get-Content -LiteralPath $InFile -Raw -ErrorAction Stop
+    $content = Read-NetworkTuningBoundedTextFile -Path $InFile -MaximumBytes $script:NetworkTuningMaxRegistryBackupBytes
   } catch {
     return [pscustomobject]@{ IsApproved = $false; Message = "Could not read registry backup file: $InFile" }
   }
 
-  $contract = Get-UjRegistryBackupContract -Name $ContractName
+  $contract = Get-NetworkTuningRegistryBackupContract -Name $ContractName
   $sectionsByPath = @{}
   $expectedEntries = @{}
   foreach ($section in $contract.Sections) {
@@ -185,7 +177,7 @@ function Test-UjRegistryBackupFile {
     if (-not $dataIsValid -and $expectedType -eq 'DWord') {
       $dataIsValid = $valueData -cmatch '^dword:[0-9a-f]{8}$'
     } elseif (-not $dataIsValid -and $expectedType -eq 'String') {
-      $dataIsValid = Test-UjRegStringData -Data $valueData
+      $dataIsValid = Test-NetworkTuningRegStringData -Data $valueData
     }
 
     if (-not $dataIsValid) {
@@ -209,7 +201,7 @@ function Test-UjRegistryBackupFile {
   return [pscustomobject]@{ IsApproved = $true; Message = '' }
 }
 
-function Export-UjRegistryKey {
+function Export-NetworkTuningRegistryKey {
   [CmdletBinding()]
   [OutputType([bool])]
   param(
@@ -221,7 +213,7 @@ function Export-UjRegistryKey {
   )
 
   try {
-    $contract = Get-UjRegistryBackupContractForPath -RegistryPath $RegistryPath
+    $contract = Get-NetworkTuningRegistryBackupContractForPath -RegistryPath $RegistryPath
     if ($null -eq $contract) {
       throw "Registry path is not part of the approved backup contract: $RegistryPath"
     }
@@ -252,7 +244,7 @@ function Export-UjRegistryKey {
             $unsignedValue = [uint32]([int64]$value -band 0xffffffffL)
             $serializedValue = 'dword:{0:x8}' -f $unsignedValue
           } elseif ($expectedType -eq 'String' -and $actualKind -eq 'String') {
-            $serializedValue = ConvertTo-UjRegStringData -Value ([string]$value)
+            $serializedValue = ConvertTo-NetworkTuningRegStringData -Value ([string]$value)
           } else {
             throw "Registry value '$valueName' has unsupported type '$actualKind'."
           }
@@ -263,7 +255,7 @@ function Export-UjRegistryKey {
     }
 
     Set-Content -LiteralPath $OutFile -Value $lines -Encoding Unicode
-    $validation = Test-UjRegistryBackupFile -InFile $OutFile -ContractName $contract.Name
+    $validation = Test-NetworkTuningRegistryBackupFile -InFile $OutFile -ContractName $contract.Name
     if (-not $validation.IsApproved) {
       throw $validation.Message
     }
@@ -275,7 +267,7 @@ function Export-UjRegistryKey {
   }
 }
 
-function Import-UjRegistryFile {
+function Import-NetworkTuningRegistryFile {
   [CmdletBinding()]
   [OutputType([bool])]
   param(
@@ -292,7 +284,7 @@ function Import-UjRegistryFile {
     return $false
   }
 
-  $validation = Test-UjRegistryBackupFile -InFile $InFile -ContractName $ContractName
+  $validation = Test-NetworkTuningRegistryBackupFile -InFile $InFile -ContractName $ContractName
   if (-not $validation.IsApproved) {
     Write-Warning -Message ("Refusing to import unapproved registry backup '{0}': {1}" -f $InFile, $validation.Message)
     return $false
@@ -311,7 +303,7 @@ function Import-UjRegistryFile {
   }
 }
 
-function Set-UjRegistryValue {
+function Set-NetworkTuningRegistryValue {
   [CmdletBinding(SupportsShouldProcess = $true)]
   [OutputType([void])]
   param(

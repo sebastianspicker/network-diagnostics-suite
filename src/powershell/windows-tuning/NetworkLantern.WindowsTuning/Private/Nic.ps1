@@ -1,4 +1,4 @@
-function Get-UjPhysicalUpAdapter {
+function Get-NetworkTuningPhysicalUpAdapter {
   [CmdletBinding()]
   [OutputType([Microsoft.PowerShell.Cmdletization.GeneratedTypes.NetAdapter.NetAdapter[]])]
   param()
@@ -6,7 +6,7 @@ function Get-UjPhysicalUpAdapter {
   Get-NetAdapter -Physical -ErrorAction Stop | Where-Object { $_.Status -eq 'Up' }
 }
 
-function Set-UjNicAdvancedPropertyIfSupported {
+function Set-NetworkTuningNicAdvancedPropertyIfSupported {
   [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
   [OutputType([bool])]
   param(
@@ -24,7 +24,7 @@ function Set-UjNicAdvancedPropertyIfSupported {
   )
 
   # Prefer standardized RegistryKeywords over localized DisplayNames
-  $keyword = if ($script:UjNicKeywordMap.ContainsKey($DisplayName)) { $script:UjNicKeywordMap[$DisplayName] } else { $null }
+  $keyword = if ($script:NetworkTuningNicKeywordMap.ContainsKey($DisplayName)) { $script:NetworkTuningNicKeywordMap[$DisplayName] } else { $null }
 
   $property = if ($keyword) {
     Get-NetAdapterAdvancedProperty -Name $Name -RegistryKeyword $keyword -ErrorAction SilentlyContinue
@@ -39,7 +39,7 @@ function Set-UjNicAdvancedPropertyIfSupported {
 
   if ($DryRun) {
     $keywordLabel = if ($keyword) { $keyword } else { 'no-keyword' }
-    Write-UjInformation -Message ("[DryRun] {0}: {1} ({2}) => {3}" -f $Name, $DisplayName, $keywordLabel, $Value)
+    Write-NetworkTuningInformation -Message ("[DryRun] {0}: {1} ({2}) => {3}" -f $Name, $DisplayName, $keywordLabel, $Value)
     return $true
   }
 
@@ -61,37 +61,19 @@ function Set-UjNicAdvancedPropertyIfSupported {
   }
 }
 
-function Set-UjNicConfiguration {
+function Set-NetworkTuningNicConfiguration {
   [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
   [OutputType([bool])]
   param(
-    [Parameter(Mandatory)]
-    [ValidateSet(1, 2, 3)]
-    [int]$Preset,
-
-    [Parameter()]
-    [switch]$IncludeExperimental,
-
     [Parameter()]
     [switch]$DryRun
   )
 
-  # Build list of keywords to apply based on preset tier
   $keywords = [System.Collections.Generic.List[string]]::new()
-  $keywords.AddRange([string[]]$script:UjNicKeywordsTier1)
-  if ($Preset -ge 2) { $keywords.AddRange([string[]]$script:UjNicKeywordsTier2) }
-  if ($Preset -ge 3) { $keywords.AddRange([string[]]$script:UjNicKeywordsTier3) }
-  if ($IncludeExperimental) { $keywords.AddRange([string[]]$script:UjNicKeywordsExperimental) }
-
-  # Special-case values: most keywords get 'Disabled', but some need specific values
-  $specialValues = @{
-    '*InterruptModerationRate' = '0'
-    '*ReceiveBuffers'         = '256'
-    '*TransmitBuffers'        = '256'
-  }
+  $keywords.AddRange([string[]]$script:NetworkTuningNicKeywordsTier1)
 
   try {
-    $adapters = @(Get-UjPhysicalUpAdapter)
+    $adapters = @(Get-NetworkTuningPhysicalUpAdapter)
   } catch {
     Write-Warning -Message ("Could not detect your network adapters. Make sure you have an active Ethernet connection. ({0})" -f $_.Exception.Message)
     return $false
@@ -104,27 +86,15 @@ function Set-UjNicConfiguration {
 
   $allSucceeded = $true
   foreach ($nic in $adapters) {
-    Write-UjInformation -Message ("NIC: {0}" -f $nic.Name)
+    Write-NetworkTuningInformation -Message ("NIC: {0}" -f $nic.Name)
 
     foreach ($keyword in $keywords) {
-      $displayName = if ($script:UjNicKeywordReverseMap.ContainsKey($keyword)) { $script:UjNicKeywordReverseMap[$keyword] } else { $keyword }
-      $value = if ($specialValues.ContainsKey($keyword)) { $specialValues[$keyword] } else { 'Disabled' }
-      $propertySucceeded = Set-UjNicAdvancedPropertyIfSupported -Name $nic.Name -DisplayName $displayName -Value $value -DryRun:$DryRun
+      $displayName = if ($script:NetworkTuningNicKeywordReverseMap.ContainsKey($keyword)) { $script:NetworkTuningNicKeywordReverseMap[$keyword] } else { $keyword }
+      $value = 'Disabled'
+      $propertySucceeded = Set-NetworkTuningNicAdvancedPropertyIfSupported -Name $nic.Name -DisplayName $displayName -Value $value -DryRun:$DryRun
       if ($false -eq $propertySucceeded) { $allSucceeded = $false }
     }
 
-    # RSC disable: only with -IncludeExperimental (RSC is TCP-only coalescing)
-    if ($IncludeExperimental) {
-      if ($DryRun) {
-        Write-UjInformation -Message ("[DryRun] Disable-NetAdapterRsc {0}" -f $nic.Name)
-      } elseif ($PSCmdlet.ShouldProcess($nic.Name, 'Disable NetAdapterRsc')) {
-        try {
-          Disable-NetAdapterRsc -Name $nic.Name -Confirm:$false -ErrorAction Stop | Out-Null
-        } catch {
-          Write-Warning -Message ("Could not disable RSC (Receive Segment Coalescing) on adapter '{0}'. This is non-critical and can be ignored." -f $nic.Name)
-        }
-      }
-    }
   }
 
   return $allSucceeded
