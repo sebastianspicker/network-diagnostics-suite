@@ -270,15 +270,15 @@ if ($MyInvocation.InvocationName -eq '.') {
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# Exit codes (canonical source: src/Private/Common.ps1 $script:ExitCodes)
+# Exit codes mirror the throughput module's canonical definitions.
 $EC_InputValidation = 11
 $EC_Prerequisite    = 12
 $EC_Connectivity    = 13
 $EC_Internal        = 16
 
 # Maps ErrorId from the module's error classification to CLI exit codes.
-# Delegates all regex pattern matching to Resolve-Iperf3ClassifiedError in the module,
-# so there is only one source of truth for error classification patterns.
+# Structured module errors are preferred. The application adapter normalizes
+# the additional errors raised by its profile-deletion and configuration paths.
 $script:ErrorIdToExitCode = @{
   'NetworkLantern.Throughput.InputValidation' = $EC_InputValidation
   'NetworkLantern.Throughput.Prerequisite'    = $EC_Prerequisite
@@ -286,27 +286,14 @@ $script:ErrorIdToExitCode = @{
   'NetworkLantern.Throughput.Internal'        = $EC_Internal
 }
 
-function Resolve-ExitCodeFromException {
-  [CmdletBinding()]
-  [OutputType([int])]
-  param(
-    [Parameter(Mandatory)]
-    [System.Management.Automation.ErrorRecord]$ErrorRecord
-  )
-  # Use the module's private classification function via module scope invocation.
-  $classified = & (Get-Module 'NetworkLantern.Throughput') { param($er) Resolve-Iperf3ClassifiedError -ErrorRecord $er } $ErrorRecord
-  $code = $script:ErrorIdToExitCode[$classified.ErrorId]
-  if ($null -ne $code) { return $code }
-  return $EC_Internal
-}
-
 $repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$pathHelpersPath = Join-Path $repoRoot 'scripts/PathHelpers.ps1'
+$privateDirectory = Join-Path $PSScriptRoot 'Private'
 $modulePath = Join-Path $repoRoot 'src/powershell/throughput/NetworkLantern.Throughput.psd1'
 
 try {
-  . $pathHelpersPath
   Import-Module $modulePath -Force
+  . (Join-Path $privateDirectory 'ThroughputModuleAdapter.ps1')
+  . (Join-Path $privateDirectory 'PathOpening.ps1')
 }
 catch {
   Write-Error -Message "Failed to initialize throughput CLI prerequisites: $($_.Exception.Message)" -ErrorAction Continue
@@ -323,8 +310,10 @@ $forwardParams = @{}
 
 if ($ConfigurationPath) {
   try {
-    $resolvedConfigPath = Resolve-ConfigPath -Path $ConfigurationPath -BasePath (Get-Location).Path -RequireExistingFile
-    $configHash = Get-Content -LiteralPath $resolvedConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
+    $configBasePath = (Get-Location).Path
+    $resolvedConfigPath = Resolve-ThroughputConfigurationPath -Path $ConfigurationPath -BasePath $configBasePath -RequireExistingFile
+    $configRaw = Read-ThroughputConfigurationFile -Path $resolvedConfigPath -BasePath $configBasePath
+    $configHash = ConvertFrom-Json -InputObject $configRaw -AsHashtable -Depth 32 -ErrorAction Stop
     Write-Verbose "Loaded $($configHash.Count) key(s) from configuration file: $resolvedConfigPath"
     foreach ($key in $configHash.Keys) {
       if ($defaultParams.ContainsKey($key)) {
@@ -339,8 +328,9 @@ if ($ConfigurationPath) {
     }
   }
   catch {
-    Write-Error -Message "Failed to load configuration from '$ConfigurationPath': $($_.Exception.Message)" -ErrorAction Continue
-    exit $EC_InputValidation
+    $record = Get-ThroughputApplicationErrorRecord -Message "Failed to load configuration from '$ConfigurationPath': $($_.Exception.Message)" -ErrorId 'NetworkLantern.Throughput.InputValidation' -TargetObject $ConfigurationPath
+    Write-Error -Message $record.Exception.Message -ErrorAction Continue
+    exit (Resolve-ThroughputExitCode -ErrorRecord $record -ErrorIdToExitCode $script:ErrorIdToExitCode -InternalExitCode $EC_Internal)
   }
 }
 
@@ -367,30 +357,34 @@ if ($PSBoundParameters.ContainsKey('DeleteProfile')) {
 
 if ($DeleteProfile) {
   try {
-    $profilesFile = if ($forwardParams.ContainsKey('ProfilesFile')) { $forwardParams['ProfilesFile'] } else { $defaultParams['ProfilesFile'] }
+    $profilesFileSupplied = $forwardParams.ContainsKey('ProfilesFile')
+    $profilesFile = if ($profilesFileSupplied) { $forwardParams['ProfilesFile'] } else { $null }
     $strictConfiguration = if ($forwardParams.ContainsKey('StrictConfiguration')) { [bool]$forwardParams['StrictConfiguration'] } else { [bool]$defaultParams['StrictConfiguration'] }
     $quietMode = if ($forwardParams.ContainsKey('Quiet')) { [bool]$forwardParams['Quiet'] } else { [bool]$defaultParams['Quiet'] }
 
-    $removed = Remove-Iperf3Profile -ProfileName $DeleteProfile -ProfilesFile $profilesFile -StrictConfiguration:$strictConfiguration
+    $removeParams = @{ ProfileName = $DeleteProfile; StrictConfiguration = $strictConfiguration }
+    if ($profilesFileSupplied) { $removeParams['ProfilesFile'] = $profilesFile }
+    $removed = Remove-Iperf3Profile @removeParams
+    $profilesFileDisplay = if ($profilesFileSupplied) { $profilesFile } else { $defaultParams['ProfilesFile'] }
     if (-not $removed) {
-      Write-Error -Message "Profile '$DeleteProfile' not found in '$profilesFile'." -ErrorAction Continue
+      Write-Error -Message "Profile '$DeleteProfile' not found in '$profilesFileDisplay'." -ErrorAction Continue
       exit $EC_InputValidation
     }
     if (-not $quietMode) {
-      Write-Information -InformationAction Continue "Deleted profile '$DeleteProfile' from '$profilesFile'."
+      Write-Information -InformationAction Continue "Deleted profile '$DeleteProfile' from '$profilesFileDisplay'."
     }
     if ($PassThru) {
       [pscustomobject]@{
         Mode        = 'DeleteProfile'
         ProfileName = $DeleteProfile
-        ProfilesFile = $profilesFile
+        ProfilesFile = $profilesFileDisplay
         Removed     = $true
       }
     }
     exit 0
   }
   catch {
-    $exitCode = Resolve-ExitCodeFromException -ErrorRecord $_
+    $exitCode = Resolve-ThroughputExitCode -ErrorRecord $_ -ErrorIdToExitCode $script:ErrorIdToExitCode -InternalExitCode $EC_Internal
     Write-Error -Message $_.Exception.Message -ErrorAction Continue
     exit $exitCode
   }
@@ -439,7 +433,7 @@ try {
       $outDirToOpen = [string]$runSummary.EffectiveParameters.OutDir
     }
     if ($outDirToOpen -and (Test-Path -LiteralPath $outDirToOpen -PathType Container)) {
-      Open-FolderOrFile -Path $outDirToOpen
+      Open-ThroughputFolderOrFile -Path $outDirToOpen
     }
     else {
       Write-Warning "Output directory not found: $outDirToOpen"
@@ -452,7 +446,7 @@ try {
   exit $exitCode
 }
 catch {
-  $exitCode = Resolve-ExitCodeFromException -ErrorRecord $_
+  $exitCode = Resolve-ThroughputExitCode -ErrorRecord $_ -ErrorIdToExitCode $script:ErrorIdToExitCode -InternalExitCode $EC_Internal
   Write-Error -Message $_.Exception.Message -ErrorAction Continue
   exit $exitCode
 }

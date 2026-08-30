@@ -377,19 +377,18 @@ function Invoke-Iperf3NativeProcess {
       $waitStopwatch = [System.Diagnostics.Stopwatch]::StartNew()
       while (-not $completed -and $waitStopwatch.ElapsedMilliseconds -lt $TimeoutMs) {
         try {
-          if (Test-Path -LiteralPath $CancellationFile -PathType Leaf -ErrorAction Stop) {
-            $signalFileInfo = Get-Item -LiteralPath $CancellationFile -ErrorAction Stop
-            if ($signalFileInfo.Length -gt 512) {
-              Write-Verbose "Ignoring oversized iperf3 cancellation signal for run '$CancellationRunId'."
+          try {
+            $signalContent = Read-Iperf3BoundedTextFile -Path $CancellationFile -MaxBytes $script:Iperf3CancellationSignalMaxBytes -ArtifactDescription 'iperf3 cancellation signal'
+            if ([string]::Equals($signalContent, $expectedCancellationContent, [StringComparison]::Ordinal)) {
+              $cancelled = $true
+              break
             }
-            else {
-              $signalContent = [System.IO.File]::ReadAllText($CancellationFile)
-              if ([string]::Equals($signalContent, $expectedCancellationContent, [StringComparison]::Ordinal)) {
-                $cancelled = $true
-                break
-              }
-              Write-Verbose "Ignoring foreign or stale iperf3 cancellation signal for run '$CancellationRunId'."
-            }
+            Write-Verbose "Ignoring foreign or stale iperf3 cancellation signal for run '$CancellationRunId'."
+          }
+          catch [System.IO.FileNotFoundException] { $null = $null } # Absence is the normal no-cancellation state.
+          catch [System.IO.DirectoryNotFoundException] { $null = $null } # The temporary directory may disappear between polls.
+          catch [System.IO.InvalidDataException] {
+            Write-Verbose "Ignoring oversized iperf3 cancellation signal for run '$CancellationRunId'."
           }
         }
         catch {

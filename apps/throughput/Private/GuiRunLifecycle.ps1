@@ -3,6 +3,32 @@
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'The plural name describes processing the complete deferred-job collection.')]
 param()
 
+$script:RunCancellationSignalMaxBytes = 512
+
+function Read-RunCancellationSignalBounded {
+  [CmdletBinding()]
+  [OutputType([string])]
+  param([Parameter(Mandatory)][string]$Path)
+  $stream = $null
+  try {
+    $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+    $buffer = [byte[]]::new($script:RunCancellationSignalMaxBytes + 1)
+    $total = 0
+    while ($total -lt $buffer.Length) {
+      $read = $stream.Read($buffer, $total, $buffer.Length - $total)
+      if ($read -eq 0) { break }
+      $total += $read
+    }
+    if ($total -gt $script:RunCancellationSignalMaxBytes) {
+      throw "Cancellation signal exceeds maximum size ($($script:RunCancellationSignalMaxBytes) bytes): $Path"
+    }
+    return [System.Text.Encoding]::UTF8.GetString($buffer, 0, $total)
+  }
+  finally {
+    if ($stream) { $stream.Dispose() }
+  }
+}
+
 function New-RunCancellationContext {
   $runId = [guid]::NewGuid().ToString('N')
   $nonce = [guid]::NewGuid().ToString('N')
@@ -33,8 +59,7 @@ function Set-RunCancellationSignal {
       $tempPath = $null
     }
     catch [System.IO.IOException] {
-      if (-not (Test-Path -LiteralPath $CancellationFile -PathType Leaf)) { throw }
-      $existingContent = [System.IO.File]::ReadAllText($CancellationFile)
+      $existingContent = Read-RunCancellationSignalBounded -Path $CancellationFile
       if (-not [string]::Equals($existingContent, $expectedContent, [StringComparison]::Ordinal)) {
         throw "Cancellation signal path already contains foreign content: $CancellationFile"
       }

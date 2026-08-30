@@ -15,7 +15,6 @@ function Get-ParamHashFromRunTab {
   $chkSingleTest = $Form.Controls.Find('chkSingleTest', $true) | Select-Object -First 1
   $chkForce = $Form.Controls.Find('chkForce', $true) | Select-Object -First 1
   $chkStrict = $Form.Controls.Find('chkStrict', $true) | Select-Object -First 1
-  $profilesFile = $Form.Controls.Find('txtProfilesFile', $true) | Select-Object -First 1
 
   $omit = $Form.Controls.Find('numOmit', $true) | Select-Object -First 1
   $retryCount = $Form.Controls.Find('numRetryCount', $true) | Select-Object -First 1
@@ -44,7 +43,7 @@ function Get-ParamHashFromRunTab {
     SingleTest            = $chkSingleTest.Checked
     Force                 = $chkForce.Checked
     StrictConfiguration   = $chkStrict.Checked
-    ProfilesFile          = $profilesFile.Text.Trim()
+    ProfilesFile          = Get-ProfilesFileFromForm -Form $Form
     RetryCount            = [int]$retryCount.Value
     DscpClasses           = @($dscpClasses.Text.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
     TcpWindows            = @($tcpWindows.Text.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })

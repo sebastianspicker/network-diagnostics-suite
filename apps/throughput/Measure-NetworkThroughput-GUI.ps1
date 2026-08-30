@@ -19,7 +19,6 @@ Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
 $script:RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-. (Join-Path $script:RepoRoot 'scripts/PathHelpers.ps1')
 $script:ModulePath = Join-Path $script:RepoRoot 'src/powershell/throughput/NetworkLantern.Throughput.psd1'
 Import-Module $script:ModulePath -Force
 
@@ -37,6 +36,8 @@ $privateDirectory = Join-Path $PSScriptRoot 'Private'
 . (Join-Path $privateDirectory 'GuiRunLifecycle.ps1')
 . (Join-Path $privateDirectory 'GuiProfiles.ps1')
 . (Join-Path $privateDirectory 'GuiUiConstruction.ps1')
+. (Join-Path $privateDirectory 'ThroughputModuleAdapter.ps1')
+. (Join-Path $privateDirectory 'PathOpening.ps1')
 
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 350

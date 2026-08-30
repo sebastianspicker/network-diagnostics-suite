@@ -302,14 +302,11 @@ function Write-Iperf3RunIndex {
       # Read, validate, append, and atomically replace while holding one stable
       # sidecar lock so concurrent writers cannot overwrite each other's entry.
       $existingRuns = @()
-      if (Test-Path -LiteralPath $indexPath -PathType Leaf) {
-        $indexFileInfo = Get-Item -LiteralPath $indexPath
-        if ($indexFileInfo.Length -gt 1MB) {
-          Write-Warning "Run index file exceeds 1 MB ($($indexFileInfo.Length) bytes); starting fresh."
-        }
-        else {
+      try {
+        $indexText = Read-Iperf3BoundedTextFile -Path $indexPath -MaxBytes $script:Iperf3RunIndexFileMaxBytes -ArtifactDescription 'Run index file'
+        if (-not [string]::IsNullOrWhiteSpace($indexText)) {
           try {
-            $existing = Get-Content -LiteralPath $indexPath -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
+            $existing = $indexText | ConvertFrom-Json -AsHashtable
             if ($existing.ContainsKey('runs') -and $existing['runs'] -is [array]) {
               $requiredEntryProps = @('timestamp', 'status')
               $existingRuns = @($existing['runs'] | Where-Object {
@@ -326,9 +323,13 @@ function Write-Iperf3RunIndex {
               })
             }
           }
-          catch { Write-Verbose "Could not read existing run index; starting fresh." }
+          catch { Write-Verbose "Could not parse existing run index; starting fresh." }
         }
       }
+      catch [System.IO.FileNotFoundException] { $null = $null } # No prior index starts a fresh index.
+      catch [System.IO.DirectoryNotFoundException] { $null = $null } # A removed output directory has no prior index.
+      catch [System.IO.InvalidDataException] { Write-Warning "$($_.Exception.Message) Starting fresh." }
+      catch { Write-Verbose "Could not read existing run index; starting fresh." }
 
       $allRuns = @($existingRuns) + @($runEntry)
       if ($allRuns.Count -gt 50) { $allRuns = $allRuns[($allRuns.Count - 50)..($allRuns.Count - 1)] }

@@ -402,6 +402,8 @@ $txtProfilesFile.Name = 'txtProfilesFile'
 $txtProfilesFile.Location = New-Object System.Drawing.Point(100, 12)
 $txtProfilesFile.Size = New-Object System.Drawing.Size(560, 24)
 $txtProfilesFile.Text = (Join-Path (Join-Path (Get-Location) '.iperf3') 'profiles.json')
+$txtProfilesFile.Tag = 'Default'
+$txtProfilesFile.Add_TextChanged({ $this.Tag = 'Explicit' })
 $tabProfiles.Controls.Add($txtProfilesFile)
 
 $btnRefreshProfiles = New-Object System.Windows.Forms.Button
@@ -480,7 +482,7 @@ $btnOpenSummary.Location = New-Object System.Drawing.Point(140, 86)
 $btnOpenSummary.Size = New-Object System.Drawing.Size(120, 30)
 $btnOpenSummary.Add_Click({
   if ($txtLastSummary.Text -and (Test-Path -LiteralPath $txtLastSummary.Text -PathType Leaf)) {
-    Open-FolderOrFile -Path $txtLastSummary.Text
+    Open-ThroughputFolderOrFile -Path $txtLastSummary.Text
   }
 })
 $tabReports.Controls.Add($btnOpenSummary)
@@ -491,7 +493,7 @@ $btnOpenReport.Location = New-Object System.Drawing.Point(270, 86)
 $btnOpenReport.Size = New-Object System.Drawing.Size(120, 30)
 $btnOpenReport.Add_Click({
   if ($txtLastReport.Text -and (Test-Path -LiteralPath $txtLastReport.Text -PathType Leaf)) {
-    Open-FolderOrFile -Path $txtLastReport.Text
+    Open-ThroughputFolderOrFile -Path $txtLastReport.Text
   }
 })
 $tabReports.Controls.Add($btnOpenReport)
@@ -503,7 +505,7 @@ $btnOpenOutDir.Size = New-Object System.Drawing.Size(130, 30)
 $btnOpenOutDir.Add_Click({
   $dir = $txtOutDir.Text.Trim()
   if ($dir -and (Test-Path -LiteralPath $dir -PathType Container)) {
-    Open-FolderOrFile -Path $dir
+    Open-ThroughputFolderOrFile -Path $dir
   }
 })
 $tabReports.Controls.Add($btnOpenOutDir)

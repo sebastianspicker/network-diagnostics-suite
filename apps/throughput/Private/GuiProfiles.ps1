@@ -5,8 +5,10 @@ function Get-ProfilesFileFromForm {
   param([System.Windows.Forms.Form]$Form)
   $tb = $Form.Controls.Find('txtProfilesFile', $true) | Select-Object -First 1
   $path = $tb.Text.Trim()
-  if (-not $path) { $path = (Join-Path (Join-Path (Get-Location) '.iperf3') 'profiles.json') }
-  return (Resolve-ConfigPath -Path $path -BasePath (Get-Location).Path)
+  # The initial expanded display is a convenience, not an explicit operator
+  # destination. Once edited, even back to the same text, it is explicit.
+  if (-not $path -or $tb.Tag -eq 'Default') { return $null }
+  return $path
 }
 
 function Show-GuiError {

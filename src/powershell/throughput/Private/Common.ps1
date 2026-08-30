@@ -28,6 +28,47 @@ $script:ExclusiveFileLockRetryDelayMs = 100
 $script:DefaultThresholdMinThroughputMbps = $null
 $script:DefaultThresholdMaxLossPct        = $null
 $script:DefaultThresholdMaxJitterMs       = $null
+$script:Iperf3SummaryFileMaxBytes         = 1MB
+$script:Iperf3RunIndexFileMaxBytes        = 1MB
+$script:Iperf3CancellationSignalMaxBytes  = 512
+
+function Read-Iperf3BoundedTextFile {
+  <#
+  .SYNOPSIS
+  Reads a small throughput artifact from one stable handle.
+  .DESCRIPTION
+  Reads at most MaxBytes plus one byte from the opened handle.  Do not add a
+  preceding metadata check: it would race replacement or growth and would not
+  describe the bytes subsequently parsed.
+  #>
+  [CmdletBinding()]
+  [OutputType([string])]
+  param(
+    [Parameter(Mandatory)][string]$Path,
+    [Parameter(Mandatory)][ValidateRange(1, 10485760)][int]$MaxBytes,
+    [Parameter(Mandatory)][string]$ArtifactDescription
+  )
+  $stream = $null
+  try {
+    $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+    $buffer = [byte[]]::new($MaxBytes + 1)
+    $total = 0
+    while ($total -lt $buffer.Length) {
+      $read = $stream.Read($buffer, $total, $buffer.Length - $total)
+      if ($read -eq 0) { break }
+      $total += $read
+    }
+    if ($total -gt $MaxBytes) {
+      throw [System.IO.InvalidDataException]::new("$ArtifactDescription exceeds maximum size ($MaxBytes bytes): $Path")
+    }
+    $text = [System.Text.Encoding]::UTF8.GetString($buffer, 0, $total)
+    if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) { $text = $text.Substring(1) }
+    return $text
+  }
+  finally {
+    if ($stream) { $stream.Dispose() }
+  }
+}
 
 function Open-ExclusiveSidecarLock {
   <#

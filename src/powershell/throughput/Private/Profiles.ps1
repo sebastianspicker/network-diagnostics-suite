@@ -1,4 +1,5 @@
 # Profile storage helpers (private to NetworkLantern.Throughput)
+$script:Iperf3ProfilesFileMaxBytes = 1MB
 
 function Get-DefaultProfilesFilePath {
   [CmdletBinding()]
@@ -7,30 +8,122 @@ function Get-DefaultProfilesFilePath {
   return (Join-Path (Join-Path (Get-Location) '.iperf3') 'profiles.json')
 }
 
+function Test-Iperf3ProcessIsElevated {
+  [CmdletBinding()]
+  [OutputType([bool])]
+  param()
+
+  if ($IsWindows) {
+    try {
+      $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+      $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+      return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    }
+    catch { return $false }
+  }
+  try { return ([int](& id -u) -eq 0) }
+  catch { return ([Environment]::UserName -eq 'root') }
+}
+
 function Resolve-ProfilesFilePath {
+  [CmdletBinding()]
+  [OutputType([pscustomobject])]
+  param(
+    [string]$ProfilesFile,
+    [string]$Provenance
+  )
+  $base = [System.IO.Path]::GetFullPath((Get-Location).Path)
+  $defaultPath = [System.IO.Path]::GetFullPath((Get-DefaultProfilesFilePath))
+  $resolvedProvenance = 'ExplicitAbsolute'
+  $containmentBase = $null
+  if ($Provenance -eq 'Default' -or [string]::IsNullOrWhiteSpace([string]$ProfilesFile)) {
+    $ProfilesFile = $defaultPath
+    $resolvedProvenance = 'Default'
+    $containmentBase = $base
+  }
+  if ($ProfilesFile -match '[\x00-\x1f]') {
+    Write-Iperf3Error -Message 'ProfilesFile path contains control characters.' -ErrorId 'NetworkLantern.Throughput.InputValidation' -TargetObject $ProfilesFile
+  }
+  if ([System.IO.Path]::IsPathRooted($ProfilesFile)) {
+    $candidate = [System.IO.Path]::GetFullPath($ProfilesFile)
+  }
+  else {
+    $resolvedProvenance = 'Relative'
+    $containmentBase = $base
+    $candidate = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($base, [string]$ProfilesFile))
+  }
+  # Created once at the adapter boundary and carried unchanged through the
+  # operation. Re-resolving Resolution.Path would erase the original trust.
+  $resolution = [pscustomobject]@{ Path = $candidate; Provenance = $resolvedProvenance; ContainmentBase = $containmentBase }
+  Assert-Iperf3ProfileOperationPathSafety -Resolution $resolution
+  return $resolution
+}
+
+function Assert-Iperf3ProfileWritePathIsNotReparsePoint {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)]
+    [string]$Path
+  )
+
+  try {
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+  }
+  catch [System.Management.Automation.ItemNotFoundException] {
+    return
+  }
+  catch {
+    Write-Iperf3Error -Message "Profiles file write target could not be validated '$Path': $($_.Exception.Message)" -ErrorId 'NetworkLantern.Throughput.InputValidation' -TargetObject $Path
+  }
+  if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+    Write-Iperf3Error -Message "Profiles file write target must not be a symbolic link or reparse point: $Path" -ErrorId 'NetworkLantern.Throughput.InputValidation' -TargetObject $Path
+  }
+}
+
+function Assert-Iperf3ProfileOperationPathSafety {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory)][object]$Resolution
+  )
+  if ($Resolution.Provenance -in @('Default', 'Relative') -and (Test-Iperf3ProcessIsElevated)) {
+    Write-Iperf3Error -Message "$($Resolution.Provenance) profile paths are refused when the process is elevated. Use an explicit absolute profiles path." -ErrorId 'NetworkLantern.Throughput.InputValidation' -TargetObject $Resolution.Path
+  }
+  if ($Resolution.ContainmentBase) {
+    Assert-RelativePathHasNoReparsePoint -BasePath $Resolution.ContainmentBase -CandidatePath $Resolution.Path -PathDescription 'Profiles file path' | Out-Null
+  }
+  Assert-Iperf3ProfileWritePathIsNotReparsePoint -Path $Resolution.Path
+}
+
+function Read-Iperf3ProfilesFileBounded {
   [CmdletBinding()]
   [OutputType([string])]
   param(
-    [string]$ProfilesFile
+    [Parameter(Mandatory)][object]$Resolution
   )
-  if ([string]::IsNullOrWhiteSpace($ProfilesFile)) {
-    return (Get-DefaultProfilesFilePath)
+
+  $stream = $null
+  try {
+    # This is the operation-time check for relative paths. The subsequent
+    # opened handle is bounded to limit+1 bytes; non-elevated Unix callers get
+    # best-effort revalidation, not a claim of adversarial no-follow safety.
+    Assert-Iperf3ProfileOperationPathSafety -Resolution $Resolution
+    return (Read-Iperf3BoundedTextFile -Path $Resolution.Path -MaxBytes $script:Iperf3ProfilesFileMaxBytes -ArtifactDescription 'Profiles file')
   }
-  if ($ProfilesFile -match '[\x00-\x1f]') {
-    throw "ProfilesFile path contains control characters."
+  catch [System.IO.FileNotFoundException] { return $null }
+  catch [System.IO.DirectoryNotFoundException] { return $null }
+  catch [System.Management.Automation.RuntimeException] {
+    if ($_.Exception.InnerException -is [System.IO.FileNotFoundException] -or
+        $_.Exception.InnerException -is [System.IO.DirectoryNotFoundException]) { return $null }
+    throw
   }
-  # Absolute paths intentionally bypass Test-PathUnderBase. When the user explicitly
-  # provides a rooted path (CLI -ProfilesFile or GUI text box), they are choosing
-  # a specific location outside the project directory, which is a supported use case.
-  if ([System.IO.Path]::IsPathRooted($ProfilesFile)) {
-    return [System.IO.Path]::GetFullPath($ProfilesFile)
+  catch {
+    if ($_.Exception.InnerException -is [System.IO.FileNotFoundException] -or
+        $_.Exception.InnerException -is [System.IO.DirectoryNotFoundException]) { return $null }
+    Write-Iperf3Error -Message "Profiles file could not be read: $($Resolution.Path). $($_.Exception.Message)" -ErrorId 'NetworkLantern.Throughput.Prerequisite' -TargetObject $Resolution.Path
   }
-  $base = (Get-Location).Path
-  $candidate = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($base, $ProfilesFile))
-  if (-not (Test-PathUnderBase -BasePath $base -CandidatePath $candidate)) {
-    throw "Profiles file path must be under the current directory. Resolved: $candidate"
+  finally {
+    if ($stream) { $stream.Dispose() }
   }
-  return $candidate
 }
 
 function Get-Iperf3ProfileStorableKeys {
@@ -46,26 +139,35 @@ function Get-Iperf3ProfileStorableKeys {
   )
 }
 
+function Assert-Iperf3ProfileName {
+  [CmdletBinding()]
+  param([Parameter(Mandatory)][string]$ProfileName)
+  if ([string]::IsNullOrWhiteSpace($ProfileName)) {
+    Write-Iperf3Error -Message 'ProfileName is required when using -SaveProfile.' -ErrorId 'NetworkLantern.Throughput.InputValidation' -TargetObject $ProfileName
+  }
+  if ($ProfileName.Length -gt 128) {
+    Write-Iperf3Error -Message "ProfileName exceeds maximum length (128 characters): '$($ProfileName.Substring(0, 32))...'." -ErrorId 'NetworkLantern.Throughput.InputValidation' -TargetObject $ProfileName
+  }
+  if ($ProfileName -match '[/\\:\*\?"<>\|\x00]') {
+    Write-Iperf3Error -Message "ProfileName contains invalid characters: '$ProfileName'." -ErrorId 'NetworkLantern.Throughput.InputValidation' -TargetObject $ProfileName
+  }
+}
+
 function Read-Iperf3ProfilesStore {
   [CmdletBinding()]
   [OutputType([hashtable])]
   param(
-    [Parameter(Mandatory)]
-    [string]$ProfilesFile,
+    [Parameter(Mandatory)][object]$Resolution,
     [switch]$StrictConfiguration
   )
-  if (-not (Test-Path -LiteralPath $ProfilesFile -PathType Leaf)) {
+  $raw = Read-Iperf3ProfilesFileBounded -Resolution $Resolution
+  if ($null -eq $raw) {
     return @{
       version    = 1
       updatedUtc = (Get-Date).ToUniversalTime().ToString('o')
       profiles   = @{}
     }
   }
-  $fileInfo = Get-Item -LiteralPath $ProfilesFile
-  if ($fileInfo.Length -gt 1MB) {
-    throw "Profiles file exceeds maximum size (1 MB): $ProfilesFile"
-  }
-  $raw = Get-Content -LiteralPath $ProfilesFile -Raw -Encoding UTF8
   if ([string]::IsNullOrWhiteSpace($raw)) {
     return @{
       version    = 1
@@ -74,19 +176,23 @@ function Read-Iperf3ProfilesStore {
     }
   }
   try {
-    $obj = ConvertFrom-Json -InputObject $raw -AsHashtable -ErrorAction Stop
+    $obj = ConvertFrom-Json -InputObject $raw -AsHashtable -Depth 32 -ErrorAction Stop
   }
   catch {
-    if ($StrictConfiguration) { throw "Profiles file is invalid JSON: $ProfilesFile" }
+    if ($StrictConfiguration) { Write-Iperf3Error -Message "Profiles file is invalid JSON: $($Resolution.Path)" -ErrorId 'NetworkLantern.Throughput.Prerequisite' -TargetObject $Resolution.Path }
     $stamp = Get-Date -Format 'yyyyMMdd_HHmmss_fff'
-    $backupPath = "$ProfilesFile.corrupt.$stamp.bak"
+    $backupPath = "$($Resolution.Path).corrupt.$stamp.bak"
+    # This is a mutation boundary.  Do not downgrade a failed provenance or
+    # containment revalidation into the ordinary best-effort backup warning.
+    Assert-Iperf3ProfileOperationPathSafety -Resolution $Resolution
+    Assert-Iperf3ProfileWritePathIsNotReparsePoint -Path $backupPath
     try {
-      Copy-Item -LiteralPath $ProfilesFile -Destination $backupPath -Force -ErrorAction Stop
-      Write-Warning "Profiles file is invalid JSON: $ProfilesFile. Backed up to '$backupPath'. Starting with empty profile store."
+      Copy-Item -LiteralPath $Resolution.Path -Destination $backupPath -Force -ErrorAction Stop
+      Write-Warning "Profiles file is invalid JSON: $($Resolution.Path). Backed up to '$backupPath'. Starting with empty profile store."
     }
     catch {
       Write-Verbose "Failed to back up corrupt profiles file: $($_.Exception.Message)"
-      Write-Warning "Profiles file is invalid JSON: $ProfilesFile. Starting with empty profile store."
+      Write-Warning "Profiles file is invalid JSON: $($Resolution.Path). Starting with empty profile store."
     }
     return @{
       version    = 1
@@ -120,17 +226,19 @@ function Invoke-LockedProfileOperation {
   [CmdletBinding()]
   [OutputType([hashtable])]
   param(
-    [Parameter(Mandatory)]
-    [string]$ProfilesFile,
+    [Parameter(Mandatory)][object]$Resolution,
     [Parameter(Mandatory)]
     [scriptblock]$Operation,
     [switch]$StrictConfiguration
   )
+  $ProfilesFile = $Resolution.Path
   if (-not $ProfilesFile.EndsWith('.json', [StringComparison]::OrdinalIgnoreCase)) {
-    throw "Profiles file must have a .json extension: $ProfilesFile"
+    Write-Iperf3Error -Message "Profiles file must have a .json extension: $ProfilesFile" -ErrorId 'NetworkLantern.Throughput.InputValidation' -TargetObject $ProfilesFile
   }
   $dir = Split-Path -Parent $ProfilesFile
+  Assert-Iperf3ProfileOperationPathSafety -Resolution $Resolution
   if ($dir -and -not (Test-Path -LiteralPath $dir)) {
+    Assert-Iperf3ProfileOperationPathSafety -Resolution $Resolution
     $null = New-Item -ItemType Directory -Path $dir -Force
   }
   $lockPath = "$ProfilesFile.lock"
@@ -140,6 +248,9 @@ function Invoke-LockedProfileOperation {
     # Lock a stable sidecar rather than the replace target itself. Readers see
     # either the old complete file or the new complete file after the rename.
     try {
+      Assert-Iperf3ProfileOperationPathSafety -Resolution $Resolution
+      Assert-Iperf3ProfileWritePathIsNotReparsePoint -Path $ProfilesFile
+      Assert-Iperf3ProfileWritePathIsNotReparsePoint -Path $lockPath
       $lockStream = Open-ExclusiveSidecarLock -LockPath $lockPath
     }
     catch [System.IO.IOException] {
@@ -147,7 +258,9 @@ function Invoke-LockedProfileOperation {
     }
     # Reuse the read path so mutation honors the 1 MiB limit and corrupt-store
     # backup behavior before applying any change.
-    $store = Read-Iperf3ProfilesStore -ProfilesFile $ProfilesFile -StrictConfiguration:$StrictConfiguration
+    Assert-Iperf3ProfileOperationPathSafety -Resolution $Resolution
+    Assert-Iperf3ProfileWritePathIsNotReparsePoint -Path $ProfilesFile
+    $store = Read-Iperf3ProfilesStore -Resolution $Resolution -StrictConfiguration:$StrictConfiguration
     $store = & $Operation $store
     $store['updatedUtc'] = (Get-Date).ToUniversalTime().ToString('o')
     $json = $store | ConvertTo-Json -Depth 10
@@ -157,7 +270,12 @@ function Invoke-LockedProfileOperation {
     }
     $tempName = ".{0}.{1}.tmp" -f ([System.IO.Path]::GetFileName($ProfilesFile)), ([guid]::NewGuid().ToString('N'))
     $tempPath = Join-Path -Path (Split-Path -Parent $ProfilesFile) -ChildPath $tempName
+    Assert-Iperf3ProfileOperationPathSafety -Resolution $Resolution
+    Assert-Iperf3ProfileWritePathIsNotReparsePoint -Path $tempPath
     Set-Content -LiteralPath $tempPath -Value $json -Encoding UTF8 -NoNewline
+    Assert-Iperf3ProfileOperationPathSafety -Resolution $Resolution
+    Assert-Iperf3ProfileWritePathIsNotReparsePoint -Path $ProfilesFile
+    Assert-Iperf3ProfileWritePathIsNotReparsePoint -Path $tempPath
     [System.IO.File]::Move($tempPath, $ProfilesFile, $true)
     $tempPath = $null
     return $store
@@ -170,146 +288,69 @@ function Invoke-LockedProfileOperation {
   }
 }
 
-function Get-Iperf3ProfileNames {
-  <#
-  .SYNOPSIS
-  Returns the names of all saved profiles.
-  .PARAMETER ProfilesFile
-  Path to the profiles JSON file. Defaults to .iperf3/profiles.json.
-  .OUTPUTS
-  [string[]] Sorted array of profile names.
-  #>
+function Get-Iperf3ProfileNamesCore {
   [CmdletBinding()]
   [OutputType([string[]])]
-  param(
-    [string]$ProfilesFile,
-    [switch]$StrictConfiguration
-  )
-  $path = Resolve-ProfilesFilePath -ProfilesFile $ProfilesFile
-  $store = Read-Iperf3ProfilesStore -ProfilesFile $path -StrictConfiguration:$StrictConfiguration
+  param([Parameter(Mandatory)][object]$Resolution, [switch]$StrictConfiguration)
+  $store = Read-Iperf3ProfilesStore -Resolution $Resolution -StrictConfiguration:$StrictConfiguration
   return [string[]]@($store['profiles'].Keys | Sort-Object)
 }
 
-function Get-Iperf3ProfileParameters {
-  <#
-  .SYNOPSIS
-  Loads and validates the parameters stored in a named profile.
-  .PARAMETER ProfileName
-  Name of the profile to load.
-  .PARAMETER ProfilesFile
-  Path to the profiles JSON file.
-  .OUTPUTS
-  [hashtable] Normalized parameter set from the profile.
-  .EXAMPLE
-  $params = Get-Iperf3ProfileParameters -ProfileName 'lab'
-  #>
+function Get-Iperf3ProfileParametersCore {
   [CmdletBinding()]
   [OutputType([hashtable])]
   param(
-    [Parameter(Mandatory)]
-    [string]$ProfileName,
-    [string]$ProfilesFile,
+    [Parameter(Mandatory)][string]$ProfileName,
+    [Parameter(Mandatory)][object]$Resolution,
     [switch]$StrictConfiguration
   )
-  $path = Resolve-ProfilesFilePath -ProfilesFile $ProfilesFile
-  $store = Read-Iperf3ProfilesStore -ProfilesFile $path -StrictConfiguration:$StrictConfiguration
+  $store = Read-Iperf3ProfilesStore -Resolution $Resolution -StrictConfiguration:$StrictConfiguration
   if (-not $store['profiles'].ContainsKey($ProfileName)) {
-    throw "Profile '$ProfileName' not found in '$path'. Use -ListProfiles to see available profile names."
+    Write-Iperf3Error -Message "Profile '$ProfileName' not found in '$($Resolution.Path)'. Use -ListProfiles to see available profile names." -ErrorId 'NetworkLantern.Throughput.InputValidation' -TargetObject $ProfileName
   }
   $rawParams = ConvertTo-Iperf3HashtableFromObject -InputObject $store['profiles'][$ProfileName]
   $allowed = Get-Iperf3ProfileStorableKeys
-  $normalized = ConvertTo-Iperf3NormalizedParameterSet -InputParameters $rawParams -AllowedKeys $allowed -StrictConfiguration:$StrictConfiguration
-  return $normalized.Parameters
+  return (ConvertTo-Iperf3NormalizedParameterSet -InputParameters $rawParams -AllowedKeys $allowed -StrictConfiguration:$StrictConfiguration).Parameters
 }
 
-function Save-Iperf3Profile {
-  <#
-  .SYNOPSIS
-  Saves a named parameter profile to the profiles JSON store.
-  .DESCRIPTION
-  Persists the given parameters under ProfileName in the profiles file.
-  Only keys from Get-Iperf3ProfileStorableKeys are stored; others are silently dropped
-  (or throw in StrictConfiguration mode). ProfileName must be <= 128 chars and free of
-  filesystem-unsafe characters.
-  .PARAMETER ProfileName
-  Name for the profile (max 128 characters, no /\:*?"<>| or null bytes).
-  .PARAMETER Parameters
-  Hashtable of parameter key-value pairs to store.
-  .PARAMETER ProfilesFile
-  Path to the profiles JSON file. Defaults to .iperf3/profiles.json under the current directory.
-  .PARAMETER StrictConfiguration
-  When set, unknown keys or invalid values throw instead of being silently dropped.
-  .EXAMPLE
-  Save-Iperf3Profile -ProfileName 'lab' -Parameters @{ Target = '10.0.0.1'; Port = 5201 }
-  #>
+function Save-Iperf3ProfileCore {
   [CmdletBinding()]
   [OutputType([pscustomobject])]
   param(
-    [Parameter(Mandatory)]
-    [string]$ProfileName,
-    [Parameter(Mandatory)]
-    [hashtable]$Parameters,
-    [string]$ProfilesFile,
+    [Parameter(Mandatory)][string]$ProfileName,
+    [Parameter(Mandatory)][hashtable]$Parameters,
+    [Parameter(Mandatory)][object]$Resolution,
     [switch]$StrictConfiguration
   )
-  if ([string]::IsNullOrWhiteSpace($ProfileName)) {
-    throw "ProfileName is required when using -SaveProfile."
-  }
-  if ($ProfileName.Length -gt 128) {
-    throw "ProfileName exceeds maximum length (128 characters): '$($ProfileName.Substring(0, 32))...'."
-  }
-  if ($ProfileName -match '[/\\:\*\?"<>\|\x00]') {
-    throw "ProfileName contains invalid characters: '$ProfileName'."
-  }
-  $path = Resolve-ProfilesFilePath -ProfilesFile $ProfilesFile
+  Assert-Iperf3ProfileName -ProfileName $ProfileName
   $allowed = Get-Iperf3ProfileStorableKeys
   $toStore = @{}
-  foreach ($k in $allowed) {
-    if ($Parameters.ContainsKey($k)) { $toStore[$k] = $Parameters[$k] }
+  foreach ($key in $allowed) {
+    if ($Parameters.ContainsKey($key)) { $toStore[$key] = $Parameters[$key] }
   }
   $normalized = ConvertTo-Iperf3NormalizedParameterSet -InputParameters $toStore -AllowedKeys $allowed -StrictConfiguration:$StrictConfiguration
-  foreach ($w in $normalized.Warnings) { Write-Warning $w }
+  foreach ($warning in $normalized.Warnings) { Write-Warning $warning }
   $capturedParams = $normalized.Parameters
   $capturedName = $ProfileName
-  $null = Invoke-LockedProfileOperation -ProfilesFile $path -StrictConfiguration:$StrictConfiguration -Operation {
+  $null = Invoke-LockedProfileOperation -Resolution $Resolution -StrictConfiguration:$StrictConfiguration -Operation {
     param($store)
     $store['profiles'][$capturedName] = $capturedParams
     return $store
   }
-  return [pscustomobject]@{
-    ProfileName = $ProfileName
-    ProfilesFile = $path
-  }
+  return [pscustomobject]@{ ProfileName = $ProfileName; ProfilesFile = $Resolution.Path }
 }
 
-function Remove-Iperf3Profile {
-  <#
-  .SYNOPSIS
-  Removes a named profile from the profiles JSON store.
-  .PARAMETER ProfileName
-  Name of the profile to remove.
-  .PARAMETER ProfilesFile
-  Path to the profiles JSON file.
-  .OUTPUTS
-  [bool] True if the profile was found and removed, false if it did not exist.
-  .EXAMPLE
-  Remove-Iperf3Profile -ProfileName 'lab'
-  #>
-  [CmdletBinding(SupportsShouldProcess = $true)]
+function Remove-Iperf3ProfileCore {
+  [CmdletBinding()]
   [OutputType([bool])]
   param(
-    [Parameter(Mandatory)]
-    [string]$ProfileName,
-    [string]$ProfilesFile,
+    [Parameter(Mandatory)][string]$ProfileName,
+    [Parameter(Mandatory)][object]$Resolution,
     [switch]$StrictConfiguration
   )
-  $path = Resolve-ProfilesFilePath -ProfilesFile $ProfilesFile
-  if (-not $PSCmdlet.ShouldProcess($path, "Remove iperf3 profile '$ProfileName'")) {
-    return $false
-  }
-  $capturedName = $ProfileName
   [ref]$removedRef = $false
-  $null = Invoke-LockedProfileOperation -ProfilesFile $path -StrictConfiguration:$StrictConfiguration -Operation {
+  $capturedName = $ProfileName
+  $null = Invoke-LockedProfileOperation -Resolution $Resolution -StrictConfiguration:$StrictConfiguration -Operation {
     param($store)
     if ($store['profiles'].ContainsKey($capturedName)) {
       $store['profiles'].Remove($capturedName) | Out-Null
