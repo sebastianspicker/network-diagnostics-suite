@@ -41,13 +41,27 @@ An ignored file is not safe to publish by default.
   `-WhatIf` run do not probe the network or write result files.
 - Throughput profile operations are writes. `-SaveProfile -WhatIf` saves the
   profile, and `-DeleteProfile` modifies the selected store.
+- Elevated throughput processes refuse the cwd-derived default and relative
+  profile-store paths at every read and write boundary. An operator-supplied
+  absolute profile path remains supported; the GUI's displayed default is
+  treated as the cwd-derived default even though it is shown expanded.
+- Throughput summary comparisons, run-index recovery, and cancellation signals
+  use bounded reads from the opened handle, rather than a size check followed
+  by a second open.
 - Windows tuning `-DryRun` does not write backups, registry values, QoS
   policies, NIC settings, or power-plan state.
 - Windows tuning `Apply`, `Backup`, and `Restore` require elevation.
-- Apply verifies its backup manifest, required artifacts, digests, and path
-  trust before tuning mutation.
-- Restore validates its input, copies approved artifacts to protected staging,
-  and revalidates staging before each restore component.
+- Apply validates the complete backup path and existing artifacts before any
+  elevated write, then verifies its manifest, required artifacts, and digests
+  before tuning mutation.
+- Restore requires a compatible tool identity and strict, scope-bounded schemas
+  for registry, QoS, NIC, RSC, and power-plan artifacts. It copies approved
+  artifacts to protected staging and revalidates staging before each component.
+
+Artifact hashes detect changes within a backup bundle; they do not authenticate
+who created it. Restore only locally created backups kept under trusted access
+control. Treat an imported or transferred bundle as untrusted unless its
+provenance was authenticated independently.
 
 These checks reduce accidental or malicious input handling risk. They do not
 replace operating-system backups, access control, or a tested recovery plan.

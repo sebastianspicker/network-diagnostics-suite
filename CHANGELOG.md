@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Architecture reconstruction
+
+- Add explicit `NetworkLantern.Path` and `NetworkLantern.Workflow` modules and
+  reduce their public scripts to parameter and exit-status adapters.
+- Make the Bash MTR feature load through one composition root and move CLI
+  orchestration out of the public shell entrypoint.
+- Split throughput exports into `Public/`, keep implementation in `Private/`,
+  and remove runtime dependencies on development scripts and private paths.
+- Replace the compact cross-capability test file with capability-owned behavior
+  suites and mechanical dependency-boundary checks.
+- Preserve supported execution entrypoints, module exports, profile/report
+  formats, exit codes, locking, cancellation, and Windows restore compatibility.
+
 ### Alpha release preparation
 
 - Define `0.1.0-alpha.1` as the first unified repository release candidate.
@@ -20,8 +33,8 @@
   `Test-NetworkPath.ps1`, `test-network-path.sh`,
   `Measure-NetworkThroughput.ps1`, `Measure-NetworkThroughput-GUI.ps1`, and
   `Invoke-NetworkPathTuning.ps1`.
-- Retain `Invoke-NetworkPathTuning-GUI.ps1` as an informational compatibility
-  entrypoint that directs users to the tuning CLI.
+- Remove the obsolete tuning GUI guidance stub; the tuning CLI is the sole
+  supported tuning entrypoint.
 - Rename the throughput and Windows tuning modules to
   `NetworkLantern.Throughput` and `NetworkLantern.WindowsTuning`.
 - Rename exported tuning helpers to `Get-NetworkLanternDefaultBackupFolder`
@@ -65,8 +78,8 @@
   helpers into responsibility-specific private files with explicit load order.
 - Split Windows backup, manifest validation, restore staging, component
   restore, and action orchestration into responsibility-specific private files.
-- Split the throughput Pester suite into topical test files while preserving
-  test names and discovery counts.
+- Split throughput implementation responsibilities behind an explicit module
+  load order.
 
 ## Pre-alpha development snapshot (2026-04-18)
 

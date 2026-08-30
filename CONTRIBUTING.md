@@ -46,7 +46,13 @@ shell's `PATH`.
 
 ## Code boundaries
 
-- Keep operator entrypoints in `apps/` and shared implementation in `src/`.
+- Keep operator entrypoints in `apps/` and the repository root thin. They bind
+  parameters, import a capability boundary, and translate process status.
+- Put PowerShell behavior behind module manifests with explicit Public/Private
+  load order. Apps must not import module-private files.
+- Compose the Bash path package only through `src/bash/path/load.sh`; libraries
+  must not source one another.
+- Keep product code independent from `scripts/`, which is development tooling.
 - Keep path, throughput, and Windows tuning code separate.
 - Do not add an `iperf3` dependency to path diagnostics.
 - Keep Windows tuning optional.

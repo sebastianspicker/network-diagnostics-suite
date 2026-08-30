@@ -1,108 +1,75 @@
 # Architecture
 
-Network Lantern is divided by operator task. Entrypoints under `apps/` load
-implementations under `src/`. Tests exercise both public scripts and internal
-helpers.
+Network Lantern is a source-run toolkit, not a service or installable package. It exposes stable operator scripts over four independent execution capabilities:
 
-| Area | Entrypoint | Implementation | Primary output |
+| Capability | Stable adapter | Implementation boundary | Primary effects |
 | --- | --- | --- | --- |
-| PowerShell path | `apps/path/Test-NetworkPath.ps1` | `src/powershell/path/lib-ps/` | JSON and CSV |
-| Bash path | `apps/path/test-network-path.sh` | `src/bash/path/lib/` | JSON-object stream and text log |
-| Throughput | `apps/throughput/Measure-NetworkThroughput.ps1` | `src/powershell/throughput/` | CSV, JSON, Markdown, and run index |
-| Throughput GUI | `apps/throughput/Measure-NetworkThroughput-GUI.ps1` | throughput module plus Windows Forms | same files as the CLI |
-| Windows tuning | `apps/windows-tuning/Invoke-NetworkPathTuning.ps1` | `src/powershell/windows-tuning/NetworkLantern.WindowsTuning/` | structured status and optional backup |
-| Orchestration | `Invoke-NetworkLantern.ps1` | child entrypoints above | child workflow output |
+| Windows path diagnostics | `apps/path/Test-NetworkPath.ps1` | `NetworkLantern.Path` | network probes; JSON and CSV artifacts |
+| MTR path diagnostics | `apps/path/test-network-path.sh` | `src/bash/path/` | `mtr` processes; JSON-object stream and text log |
+| Throughput measurement | `apps/throughput/Measure-NetworkThroughput.ps1` and GUI | `NetworkLantern.Throughput` | `iperf3` processes, profiles, reports, run index |
+| Windows tuning | `apps/windows-tuning/Invoke-NetworkPathTuning.ps1` | `NetworkLantern.WindowsTuning` | verification, backup, optional system mutation and restore |
 
-## Path diagnostics
+`Invoke-NetworkLantern.ps1` is the stable multi-capability adapter. `NetworkLantern.Workflow` exports `New-NetworkLanternWorkflowPlan`, which builds profile-resolved, ordered capability plans only. The root application layer maps those capabilities to trusted adapters and executes isolated children. The static `site/` planner only generates preview commands; it is not part of the execution runtime.
 
-Both path entrypoints load default targets from `config/hosts.conf`. Command
-line host arguments override the file. They share target configuration but not
-their probe matrices or result schemas.
+## Dependency direction
 
-The PowerShell path entrypoint builds a matrix from rounds, IP protocols, and
-hosts. Each live run uses Windows `ping`, `tracert`, `pathping`, and a TCP 443
-check through `Test-NetConnection`. It records stage status and derives an
-overall pass or failure for each planned run.
+```text
+operator input
+    |
+    v
+apps/ or root adapter       parameter binding and exit-code translation
+    |
+    v
+capability module/package   validation, planning, orchestration, result policy
+    |
+    v
+OS and tool boundary        ping, tracert, pathping, mtr, iperf3, Windows APIs
+    |
+    v
+local artifacts/state       reports, profiles, locks, cancellation, backups
+```
 
-The Bash entrypoint builds a matrix from `mtr` test types, rounds, and hosts.
-It invokes one `mtr` process at a time, enforces a per-process timeout, and
-appends each result as a separate JSON value. Its `.json.log` output is a
-stream of JSON objects, not a single JSON array.
+Adapters import module manifests or the Bash `load.sh` composition point. They do not import module-private files. Product code does not depend on `scripts/`, which is reserved for development and verification. PowerShell module root files keep complete explicit private and public loader inventories; every manifest export must resolve to a function physically defined under `Public/`. `src/bash/path/load.sh` is the only Bash composition root; libraries do not source one another.
 
-## Throughput
+The Windows and MTR path tools intentionally remain separate implementations. They share the target configuration format, but their probes, plans, platform requirements, and result schemas differ. A common path abstraction would hide meaningful operational differences without creating a reusable contract.
 
-`NetworkLantern.Throughput` exports:
+## Capability boundaries
 
-- `Measure-NetworkThroughput`
-- `Get-NetworkThroughputDefaultParameterSet`
-- `Get-Iperf3ProfileNames`
-- `Get-Iperf3ProfileParameters`
-- `Save-Iperf3Profile`
-- `Remove-Iperf3Profile`
-- `Compare-Iperf3Runs`
+### Windows path
 
-The CLI wrapper merges defaults, JSON configuration, a named profile, and
-explicit parameters. Explicit parameters have highest precedence. A test run
-then validates its target and settings, checks prerequisites and connectivity,
-probes `iperf3` capabilities, builds a test plan, executes native processes,
-and writes reports.
+`NetworkLantern.Path` owns host and output validation, round and protocol planning, Windows probe invocation, status aggregation, and JSON/CSV persistence. `Invoke-NetworkPathDiagnostics` is its only exported command. The adapter handles the historical CLI surface and converts the returned run result to a process status.
 
-Each native `iperf3` process has a deadline based on duration and omit values,
-plus a 30-second buffer. The Windows Forms client runs tests in a background
-job and uses a nonce-bound signal file for cancellation. Tests cover the
-cancellation protocol and cleanup reporting, not the complete interactive UI.
+### MTR path
 
-Direct profile storage defaults to `.iperf3/profiles.json`. Profile writes use
-a lock file and atomic replacement. Invalid JSON is rejected in strict mode.
-In non-strict mode the module attempts to preserve a corrupt copy before using
-an empty store.
+The Bash package is composed by `load.sh`. `main.sh` owns CLI parsing and the run lifecycle; `lib/` owns focused target configuration, validation, MTR argument construction, planning, reporting, and bounded execution. Its JSON log remains a stream of individual objects rather than an array.
 
-## Windows tuning
+### Throughput
 
-`NetworkLantern.WindowsTuning` exports:
+`NetworkLantern.Throughput.psm1` is an ordered loader. Exported commands live under `Public/`; `Private/` owns validation, iperf3 process control, test planning, profile persistence, reporting, and error classification. The CLI and GUI share app-local adapters for module calls and file opening. Neither reaches into module-private paths.
 
-- `Invoke-NetworkPathTuning`
-- `Get-NetworkLanternDefaultBackupFolder`
-- `Test-NetworkTuningAdministrator`
+Profile files and run indexes use sidecar locks and atomic replacement. GUI cancellation uses a nonce-bound signal file. These are behavioral boundaries, not incidental implementation details.
 
-`Verify` reads local QoS state. `Apply`, `Backup`, and `Restore` require Windows
-and elevation unless the command is a dry run. Apply creates and validates a
-backup before reaching any configuration mutation. Restore validates manifest
-shape, schema compatibility, required artifacts, digests, and path trust. It
-then copies artifacts to protected staging and revalidates that staging before
-each component uses it.
+### Windows tuning
 
-The public profiles are intentionally narrow:
+`NetworkLantern.WindowsTuning` remains optional and Windows-specific. Read-only verification is distinct from mutation. Apply creates and validates a backup before any configuration write. Restore validates manifest shape, compatibility, expected artifacts, digests, path trust, protected staging, and staging integrity before each consumer runs.
 
-- `Safe` enables local QoS marking and creates requested UDP port or application
-  DSCP policies.
-- `Measured` adds supported NIC power-saving changes and selects the High
-  Performance power plan unless another supported plan option is supplied.
+Legacy backup names and schemas remain accepted at this boundary because they protect recoverability for existing operator state. They are not shared naming conventions for new code.
 
-See [the tuning evidence matrix](evidence/tuning-matrix.md) for included and
-excluded settings.
+### Workflow
 
-## Orchestration
+`NetworkLantern.Workflow` parses profiles and returns ordered capability steps with resolved parameters. It has no repository-path knowledge and performs no process execution. The root application layer validates every step against one trusted capability descriptor table, maps the capability to its repository adapter, and invokes it in an isolated PowerShell child. Isolation prevents one script's module state or terminating behavior from contaminating another workflow step. The child reads at most the 1 MiB envelope limit plus one byte from standard input, validates the same descriptor and parameter allowlist, then resolves its adapter path from the trusted map. The envelope never carries an executable path. The root adapter is the only layer allowed to terminate the parent process.
 
-`Invoke-NetworkLantern.ps1` accepts an optional profile and maps one workflow to
-one or more child scripts:
+## Configuration and state ownership
 
-| Workflow | Child execution |
-| --- | --- |
-| `Path` | PowerShell path entrypoint |
-| `Throughput` | throughput CLI; requires `IperfTarget` |
-| `Baseline` | path, then one throughput test; requires `IperfTarget` |
-| `WindowsTuning` | Windows tuning CLI |
-| `Triage` | path, then throughput only when `IperfTarget` is present |
+- `config/hosts.conf` is shared target input for both path tools.
+- `profiles/example-office.json` documents the workflow profile schema.
+- Direct throughput profiles default to `.iperf3/profiles.json`; orchestrated profiles use `profiles/throughput-profiles.local.json`.
+- Path and throughput artifacts belong to their selected output roots.
+- Windows tuning backups belong to the tuning module and are independent of workflow artifact roots.
+- Preview modes may read configuration and validate inputs, but must not create result or tuning state. Throughput profile save and delete are explicit exceptions.
 
-Children run in separate PowerShell processes. Parameters are serialized to
-JSON through process-scoped environment variables. A nonzero child exit code is
-returned unchanged by the orchestrator.
+## Enforcement
 
-`scripts/run-workflow.sh` only checks for `pwsh` and forwards its arguments to
-the orchestrator.
+`tests/architecture/RepositoryArchitecture.Tests.ps1` enforces stable adapters, complete module loader inventories, manifest/export agreement, public export placement, dependency direction, retired-path removal, the single Bash loader, executable modes, and the static planner boundary. Mutation fixtures keep the path-reference scanners honest. ShellCheck, PSScriptAnalyzer, Bats, and capability-focused Pester suites verify the language and behavior contracts. The complete local gate is `./scripts/ci-local.sh`.
 
-Umbrella `-DryRun` maps to path `-DryRun`, throughput `-WhatIf`, or tuning
-`-DryRun`. Orchestrated path and throughput output goes to `path/` and
-`throughput/` under `-OutRoot`, which defaults to `artifacts/`. Windows tuning
-backup selection is independent of `-OutRoot`.
+Put new behavior in the capability that owns its inputs, effects, and artifacts. Add shared code only when there is a real cross-capability concept with the same semantics; similar-looking command lines are not sufficient justification.

@@ -7,7 +7,23 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $legacyIdentityPattern = '(?i)(network-diagnostics-suite|NetworkDiagnosticsSuite|Invoke-NetworkDiagnostics|NetPathSuite|mtr-test-suite|iPerf3Test(?:-GUI)?\.ps1|Iperf3TestSuite|Optimize-NetworkPath|WindowsUdpJitterOptimization|Get-Nds|(?-i:\bNDS(?:[._-])))'
-$allowedFilePattern = '^(CHANGELOG\.md|docs/(archive|migration)/.*|scripts/Test-BrandIdentity\.ps1|tests/windows-tuning/NetworkLantern\.WindowsTuning(?:\.Restore(?:Manifest|Staging))?\.Tests\.ps1|apps/windows-tuning/Invoke-NetworkPathTuning\.ps1|src/powershell/windows-tuning/NetworkLantern\.WindowsTuning/(Private/(Actions\.BackupRestore|Constants)\.ps1|Public/Invoke-NetworkPathTuning\.ps1))$'
+$allowedFilePaths = @(
+  'docs/migration/from-iperf3-test-suite.md'
+  'docs/migration/from-mtr-test-suite.md'
+  'docs/migration/from-network-diagnostics-suite.md'
+  'docs/migration/from-windows-udp-jitter-optimization.md'
+  'scripts/Test-BrandIdentity.ps1'
+  'tests/windows-tuning/contracts/ModuleContracts.Tests.ps1'
+  'tests/windows-tuning/security/ManifestTrust.Tests.ps1'
+  'src/powershell/windows-tuning/NetworkLantern.WindowsTuning/Private/Constants.ps1'
+  'src/powershell/windows-tuning/NetworkLantern.WindowsTuning/Public/Invoke-NetworkPathTuning.ps1'
+)
+foreach ($relativePath in $allowedFilePaths) {
+  if (-not (Test-Path -LiteralPath (Join-Path -Path $RepoRoot -ChildPath $relativePath) -PathType Leaf)) {
+    throw "Brand compatibility allow-list names a missing file: $relativePath"
+  }
+}
+$allowedFilePattern = '^(?:' + (($allowedFilePaths | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')$'
 $allowedMigrationLinkPattern = '(docs/)?migration/from-(network-diagnostics-suite|mtr-test-suite|iperf3-test-suite|windows-udp-jitter-optimization)\.md'
 $textFilePattern = '(?i)(^Makefile$|\.(bash|json|md|ps1|psd1|psm1|sh|ya?ml)$)'
 $protectedPathPattern = '(?i)((^|/)\.env($|\.)|\.(key|p12|pem|pfx)$|(^|/)id_(ed25519|rsa)(\.pub)?$)'

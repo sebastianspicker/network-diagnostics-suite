@@ -39,12 +39,13 @@ From Bash, Git Bash, or WSL:
 This command runs, in order:
 
 1. ShellCheck over the Bash entrypoints, scripts, and path libraries
-2. all Bats tests under `tests/path`
+2. the path CLI contracts and all Bats tests under `tests/path/bash`
 3. `scripts/Invoke-SecretScan.ps1`
 4. `scripts/ci.ps1 -NoInstall`
 
 The final PowerShell phase runs the project identity check, PSScriptAnalyzer,
-and the compact Pester contract suite without creating test artifacts.
+and all capability and architecture Pester suites without creating test
+artifacts.
 
 The complete gate does not install system packages. By default it also refuses
 to install missing PowerShell modules. In an environment where user-scope
@@ -81,7 +82,7 @@ Run a filtered Pester subset:
 
 ```powershell
 pwsh -NoProfile -NonInteractive -File .\scripts\Invoke-Tests.ps1 `
-  -Filter 'WindowsTuning'
+  -Filter 'Windows tuning'
 ```
 
 The filter matches Pester full names. A filter that selects no tests fails.
@@ -151,9 +152,12 @@ The automated suites do not:
 - complete an elevated Windows tuning apply, injected failure, and restore
   cycle on a disposable VM
 
-Tests cover plan construction, validation, output processing, process timeout
-and cancellation behavior, exit codes, profile operations, orchestration,
-Windows tuning dry runs, backup validation, and restore defenses.
+Tests cover plan construction, validation, preview filesystem behavior, Bash
+timeouts and signal handling, throughput cancellation and profile locking,
+exit codes, workflow precedence and child isolation, Windows tuning dry runs,
+backup validation, restore defenses, and repository dependency boundaries.
+The iperf3 descendant-process timeout implementation is statically analyzed
+but is not exercised against real process trees by the current suite.
 
 ## Troubleshooting
 

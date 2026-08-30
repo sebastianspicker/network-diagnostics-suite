@@ -58,8 +58,6 @@ Current limitations:
   bidirectional mode. Use `-WhatIf` before a live matrix run.
 - The throughput cancellation protocol has direct contract coverage; GUI
   automation is not retained.
-- `apps/windows-tuning/Invoke-NetworkPathTuning-GUI.ps1` is a text-only
-  compatibility entrypoint. It does not open a GUI.
 - Real Windows `Apply`, `Backup`, and `Restore` operations change system state.
   Their validation logic is tested, but an elevated apply and restore cycle has
   not been verified on a disposable Windows VM for this revision.
@@ -226,15 +224,16 @@ directories. The throughput profile-management exceptions are described in
 .github/                         Issue templates, pull request template, and CI
 apps/path/                       Path diagnostic entrypoints
 apps/throughput/                 Throughput CLI and Windows Forms entrypoints
-apps/windows-tuning/             Windows tuning CLI and compatibility stub
+apps/windows-tuning/             Windows tuning CLI
 config/                          Shared default path targets
 docs/                            Architecture, workflow, verification, and migration guides
 profiles/                        Orchestrator profile example
 scripts/                         Test, lint, prerequisite, and wrapper scripts
-src/bash/path/lib/               Bash path implementation
-src/powershell/path/lib-ps/      PowerShell path implementation
-src/powershell/throughput/       NetworkLantern.Throughput module
+src/bash/path/                   Explicit MTR package loader, application, and libraries
+src/powershell/path/             NetworkLantern.Path module
+src/powershell/throughput/       NetworkLantern.Throughput module with Public/Private boundaries
 src/powershell/windows-tuning/   NetworkLantern.WindowsTuning module
+src/powershell/workflow/         NetworkLantern.Workflow module
 tests/                           Bats and Pester suites
 Invoke-NetworkLantern.ps1        PowerShell workflow orchestrator
 Makefile                         Local lint and test shortcuts
@@ -244,9 +243,10 @@ VERSION                          Repository version candidate
 
 ## Development workflow
 
-Use a topic branch based on `main`. Keep operator entrypoints in `apps/`,
-shared implementation in `src/`, and tests in `tests/`. Update the relevant
-workflow guide when behavior, configuration, or output changes.
+Use a topic branch based on `main`. Keep operator entrypoints thin, place
+behavior in its owning capability under `src/`, and organize tests by
+capability. Update the relevant workflow guide when behavior, configuration,
+or output changes.
 
 Run the complete local gate from Bash, Git Bash, or WSL:
 
